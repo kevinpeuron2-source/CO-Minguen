@@ -19,7 +19,10 @@ import {
   ArrowRight,
   Pencil,
   Save,
-  Stamp
+  Stamp,
+  MapPin,
+  TableProperties,
+  BarChart3
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -467,66 +470,225 @@ const RaceControl = ({
 };
 
 const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'] }) => {
+  const [viewMode, setViewMode] = useState<'groups' | 'students'>('groups');
   const sortedGroups = [...state.groups].sort((a, b) => b.totalPoints - a.totalPoints);
   
+  // LOGIC FOR STUDENT SYNTHESIS
+  const calculateStudentStats = (studentName: string) => {
+    // 1. Find all group IDs the student belongs to
+    const studentGroupIds = state.groups
+      .filter(g => g.members.includes(studentName))
+      .map(g => g.id);
+
+    // 2. Find all runs for these groups
+    const studentRuns = state.runs.filter(r => 
+      studentGroupIds.includes(r.groupId) && (r.status === 'completed' || r.status === 'failed')
+    );
+
+    let totalPoints = 0;
+    let totalTime = 0;
+    const stats = {
+      N1: { attempts: 0, found: 0 },
+      N2: { attempts: 0, found: 0 },
+      N3: { attempts: 0, found: 0 },
+    };
+
+    studentRuns.forEach(run => {
+      const isSuccess = run.status === 'completed';
+      const runBeacons = state.beacons.filter(b => run.beaconIds.includes(b.id));
+
+      if (run.startTime && run.endTime) {
+        totalTime += (run.endTime - run.startTime) / 1000; // in seconds
+      }
+
+      runBeacons.forEach(b => {
+        if (b.level) {
+            stats[b.level].attempts += 1;
+            if (isSuccess) {
+                stats[b.level].found += 1;
+                totalPoints += b.points;
+            }
+        }
+      });
+    });
+
+    const totalFound = stats.N1.found + stats.N2.found + stats.N3.found;
+    const avgTimePerBeacon = totalFound > 0 ? Math.round(totalTime / totalFound) : 0;
+
+    return {
+      totalPoints,
+      avgTimePerBeacon,
+      stats,
+      totalRuns: studentRuns.length
+    };
+  };
+
   return (
-    <div className="grid md:grid-cols-2 gap-6">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
-          <Trophy className="text-yellow-500" /> Classement
-        </h2>
-        {sortedGroups.length === 0 ? (
-           <p className="text-slate-400 text-center py-8">Aucun groupe enregistré</p>
-        ) : (
-          <div className="space-y-3">
-            {sortedGroups.map((g, idx) => (
-              <div key={g.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-                <div className="flex items-center gap-3">
-                  <span className={clsx(
-                    "w-8 h-8 flex items-center justify-center rounded-full font-bold",
-                    idx === 0 ? "bg-yellow-100 text-yellow-700" : 
-                    idx === 1 ? "bg-slate-200 text-slate-700" :
-                    idx === 2 ? "bg-orange-100 text-orange-700" : "text-slate-500"
-                  )}>
-                    {idx + 1}
-                  </span>
-                  <div>
-                    <div className="font-bold text-slate-800">{g.name}</div>
-                    <div className="text-xs text-slate-500">{g.members.join(', ')}</div>
-                  </div>
-                </div>
-                <div className="font-mono font-bold text-xl text-blue-600">
-                  {g.totalPoints} pts
-                </div>
-              </div>
-            ))}
-          </div>
-        )}
+    <div className="space-y-6">
+      <div className="flex justify-center mb-6">
+         <div className="bg-white p-1 rounded-xl shadow-sm border border-slate-200 flex">
+           <button 
+             onClick={() => setViewMode('groups')}
+             className={clsx(
+               "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
+               viewMode === 'groups' ? "bg-slate-800 text-white shadow" : "text-slate-500 hover:bg-slate-50"
+             )}
+           >
+             <Users size={16} /> Classement Groupes
+           </button>
+           <button 
+             onClick={() => setViewMode('students')}
+             className={clsx(
+               "px-4 py-2 rounded-lg text-sm font-medium transition-all flex items-center gap-2",
+               viewMode === 'students' ? "bg-slate-800 text-white shadow" : "text-slate-500 hover:bg-slate-50"
+             )}
+           >
+             <TableProperties size={16} /> Synthèse Élèves
+           </button>
+         </div>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <h2 className="text-xl font-bold mb-4">Statistiques Globales</h2>
-        <div className="grid grid-cols-2 gap-4">
-          <div className="p-4 bg-blue-50 rounded-xl">
-            <div className="text-blue-600 text-sm font-bold uppercase tracking-wide">Courses Totales</div>
-            <div className="text-3xl font-bold text-slate-800">{state.runs.length}</div>
+      {viewMode === 'groups' ? (
+        <div className="grid md:grid-cols-2 gap-6">
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
+              <Trophy className="text-yellow-500" /> Classement
+            </h2>
+            {sortedGroups.length === 0 ? (
+              <p className="text-slate-400 text-center py-8">Aucun groupe enregistré</p>
+            ) : (
+              <div className="space-y-3">
+                {sortedGroups.map((g, idx) => (
+                  <div key={g.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                    <div className="flex items-center gap-3">
+                      <span className={clsx(
+                        "w-8 h-8 flex items-center justify-center rounded-full font-bold",
+                        idx === 0 ? "bg-yellow-100 text-yellow-700" : 
+                        idx === 1 ? "bg-slate-200 text-slate-700" :
+                        idx === 2 ? "bg-orange-100 text-orange-700" : "text-slate-500"
+                      )}>
+                        {idx + 1}
+                      </span>
+                      <div>
+                        <div className="font-bold text-slate-800">{g.name}</div>
+                        <div className="text-xs text-slate-500">{g.members.join(', ')}</div>
+                      </div>
+                    </div>
+                    <div className="font-mono font-bold text-xl text-blue-600">
+                      {g.totalPoints} pts
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
           </div>
-          <div className="p-4 bg-green-50 rounded-xl">
-            <div className="text-green-600 text-sm font-bold uppercase tracking-wide">Taux de réussite</div>
-            <div className="text-3xl font-bold text-slate-800">
-              {state.runs.length > 0 
-                ? Math.round((state.runs.filter(r => r.status === 'completed').length / state.runs.length) * 100) 
-                : 0}%
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <h2 className="text-xl font-bold mb-4">Statistiques Globales</h2>
+            <div className="grid grid-cols-2 gap-4">
+              <div className="p-4 bg-blue-50 rounded-xl">
+                <div className="text-blue-600 text-sm font-bold uppercase tracking-wide">Courses Totales</div>
+                <div className="text-3xl font-bold text-slate-800">{state.runs.length}</div>
+              </div>
+              <div className="p-4 bg-green-50 rounded-xl">
+                <div className="text-green-600 text-sm font-bold uppercase tracking-wide">Taux de réussite</div>
+                <div className="text-3xl font-bold text-slate-800">
+                  {state.runs.length > 0 
+                    ? Math.round((state.runs.filter(r => r.status === 'completed').length / state.runs.length) * 100) 
+                    : 0}%
+                </div>
+              </div>
+              <div className="p-4 bg-purple-50 rounded-xl col-span-2">
+                <div className="text-purple-600 text-sm font-bold uppercase tracking-wide">Mode de fonctionnement</div>
+                <div className="text-sm font-medium text-slate-600 mt-1">
+                    L'application calcule les temps et les points localement et tente de synchroniser avec le serveur si disponible.
+                </div>
+              </div>
             </div>
           </div>
-          <div className="p-4 bg-purple-50 rounded-xl col-span-2">
-             <div className="text-purple-600 text-sm font-bold uppercase tracking-wide">Mode de fonctionnement</div>
-             <div className="text-sm font-medium text-slate-600 mt-1">
-                L'application calcule les temps et les points localement et tente de synchroniser avec le serveur si disponible.
-             </div>
-          </div>
         </div>
-      </div>
+      ) : (
+        <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
+           <div className="p-6 border-b border-slate-200 bg-slate-50">
+             <h2 className="text-xl font-bold flex items-center gap-2"><BarChart3 className="text-blue-600" /> Analyse Individuelle</h2>
+             <p className="text-sm text-slate-500 mt-1">
+               Statistiques agrégées pour chaque élève, basées sur toutes les courses effectuées (individuellement ou en groupe).
+             </p>
+           </div>
+           
+           <div className="overflow-x-auto">
+             <table className="w-full text-sm text-left">
+               <thead className="text-xs text-slate-500 uppercase bg-slate-100">
+                 <tr>
+                   <th className="px-6 py-3">Élève / Classe</th>
+                   <th className="px-6 py-3 text-center">Courses</th>
+                   <th className="px-6 py-3 text-center">Points Totaux</th>
+                   <th className="px-6 py-3 text-center text-green-700">N1 (Réussis/Total)</th>
+                   <th className="px-6 py-3 text-center text-yellow-700">N2 (Réussis/Total)</th>
+                   <th className="px-6 py-3 text-center text-red-700">N3 (Réussis/Total)</th>
+                   <th className="px-6 py-3 text-center">Temps Moyen / Balise</th>
+                 </tr>
+               </thead>
+               <tbody>
+                 {state.classes.map(cls => (
+                    cls.students.length > 0 ? (
+                      cls.students.map((student, sIdx) => {
+                        const stats = calculateStudentStats(student);
+                        return (
+                          <tr key={`${cls.id}-${sIdx}`} className="bg-white border-b hover:bg-slate-50">
+                            <td className="px-6 py-4 font-medium text-slate-900">
+                              <div className="font-bold">{student}</div>
+                              <div className="text-xs text-slate-500">{cls.name}</div>
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="font-bold">{stats.totalRuns}</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                              {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="text-blue-600 font-bold">{stats.totalPoints} pts</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                               {stats.stats.N1.attempts > 0 ? (
+                                  <span className={stats.stats.N1.found === stats.stats.N1.attempts ? "text-green-600 font-bold" : "text-slate-600"}>
+                                    {stats.stats.N1.found} / {stats.stats.N1.attempts}
+                                  </span>
+                               ) : <span className="text-slate-300">-</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                               {stats.stats.N2.attempts > 0 ? (
+                                  <span className={stats.stats.N2.found === stats.stats.N2.attempts ? "text-yellow-600 font-bold" : "text-slate-600"}>
+                                    {stats.stats.N2.found} / {stats.stats.N2.attempts}
+                                  </span>
+                               ) : <span className="text-slate-300">-</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center">
+                               {stats.stats.N3.attempts > 0 ? (
+                                  <span className={stats.stats.N3.found === stats.stats.N3.attempts ? "text-red-600 font-bold" : "text-slate-600"}>
+                                    {stats.stats.N3.found} / {stats.stats.N3.attempts}
+                                  </span>
+                               ) : <span className="text-slate-300">-</span>}
+                            </td>
+                            <td className="px-6 py-4 text-center font-mono">
+                               {stats.avgTimePerBeacon > 0 ? (
+                                 <span>{Math.floor(stats.avgTimePerBeacon / 60)}m {stats.avgTimePerBeacon % 60}s</span>
+                               ) : <span className="text-slate-300">-</span>}
+                            </td>
+                          </tr>
+                        );
+                      })
+                    ) : null
+                 ))}
+                 {state.classes.length === 0 && (
+                   <tr>
+                     <td colSpan={7} className="text-center py-8 text-slate-400 italic">
+                        Ajoutez des classes et des élèves pour voir les statistiques.
+                     </td>
+                   </tr>
+                 )}
+               </tbody>
+             </table>
+           </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -555,8 +717,8 @@ const AdminPanel = ({
   // State pour les balises
   const [beaconCode, setBeaconCode] = useState('');
   const [beaconLevel, setBeaconLevel] = useState('N1');
-  // Initialiser avec 25 zéros
   const [beaconPunch, setBeaconPunch] = useState('0000000000000000000000000');
+  const [beaconDistance, setBeaconDistance] = useState('');
   const [editingBeaconId, setEditingBeaconId] = useState<string | null>(null);
 
   // -- CLASSES HANDLERS --
@@ -607,18 +769,20 @@ const AdminPanel = ({
     e.preventDefault();
     if(beaconCode && beaconPunch) {
       const points = beaconLevel === 'N1' ? 10 : beaconLevel === 'N2' ? 20 : 30;
+      const distance = beaconDistance ? parseInt(beaconDistance) : undefined;
       
       if (editingBeaconId) {
-        actions.updateBeacon(editingBeaconId, beaconCode, beaconLevel as any, points, beaconPunch);
+        actions.updateBeacon(editingBeaconId, beaconCode, beaconLevel as any, points, beaconPunch, distance);
         setEditingBeaconId(null);
       } else {
-        actions.addBeacon(beaconCode, beaconLevel as any, points, beaconPunch);
+        actions.addBeacon(beaconCode, beaconLevel as any, points, beaconPunch, distance);
       }
       
       // Reset form
       setBeaconCode('');
       setBeaconLevel('N1');
       setBeaconPunch('0000000000000000000000000');
+      setBeaconDistance('');
     }
   };
 
@@ -627,6 +791,7 @@ const AdminPanel = ({
     setBeaconCode(b.code);
     setBeaconLevel(b.level);
     setBeaconPunch(b.punchCode || '0000000000000000000000000');
+    setBeaconDistance(b.distance ? b.distance.toString() : '');
   };
 
   const handleCancelEdit = () => {
@@ -634,6 +799,7 @@ const AdminPanel = ({
     setBeaconCode('');
     setBeaconLevel('N1');
     setBeaconPunch('0000000000000000000000000');
+    setBeaconDistance('');
   };
 
   const selectedClass = state.classes.find(c => c.id === selectedClassId);
@@ -873,6 +1039,22 @@ const AdminPanel = ({
                   </select>
                 </div>
               </div>
+
+               <div>
+                 <label className="block text-sm font-medium mb-1 text-slate-600">Distance du départ (mètres) <span className="text-slate-400 font-normal">(Optionnel)</span></label>
+                 <div className="relative">
+                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                     <MapPin size={16} className="text-slate-400" />
+                   </div>
+                   <input 
+                      type="number"
+                      className="w-full pl-10 p-2 border rounded-lg bg-slate-50 focus:bg-white transition-colors" 
+                      value={beaconDistance} 
+                      onChange={e => setBeaconDistance(e.target.value)} 
+                      placeholder="Ex: 150"
+                   />
+                 </div>
+               </div>
               
               <div>
                  <label className="block text-sm font-medium mb-1 text-slate-600">Code Poinçon (5x5)</label>
@@ -927,7 +1109,14 @@ const AdminPanel = ({
                       {b.code}
                     </span>
                     <div>
-                       <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{b.level}</div>
+                       <div className="flex items-center gap-2">
+                         <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{b.level}</div>
+                         {b.distance && (
+                           <div className="text-xs bg-slate-100 px-1.5 py-0.5 rounded text-slate-500 flex items-center gap-1">
+                             <MapPin size={10} /> {b.distance}m
+                           </div>
+                         )}
+                       </div>
                        <div className="mt-1">
                           <PunchGrid pattern={b.punchCode} readonly size="sm" />
                        </div>

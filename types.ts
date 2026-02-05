@@ -8,6 +8,7 @@ export interface Beacon {
   level: Level;
   points: number;
   punchCode: string; // Chaîne de 25 caractères ('0' ou '1') représentant une grille 5x5
+  distance?: number; // Distance en mètres par rapport au départ (optionnel)
 }
 
 export interface ClassRoom {

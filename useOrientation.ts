@@ -19,11 +19,11 @@ const generateId = () => {
 // État initial par défaut avec des motifs de poinçons (X, Carré, Ligne, etc.)
 const INITIAL_STATE: GameState = {
   beacons: [
-    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: '1000101010001000101010001' }, // X pattern
-    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: '1111110001100011000111111' }, // Square
-    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: '0010000100111110010000100' }, // Cross
-    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: '1111100000000000000011111' }, // Top/Bottom lines
-    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: '1000001000001000001000001' }, // Diagonal
+    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: '1000101010001000101010001', distance: 50 }, // X pattern
+    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: '1111110001100011000111111', distance: 100 }, // Square
+    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: '0010000100111110010000100', distance: 200 }, // Cross
+    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: '1111100000000000000011111', distance: 250 }, // Top/Bottom lines
+    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: '1000001000001000001000001', distance: 400 }, // Diagonal
   ],
   classes: [], 
   groups: [],
@@ -59,7 +59,8 @@ export const useOrientation = () => {
             // Migration douce : ajout punchCode par défaut si absent (Chaîne vide ou ?)
             data.beacons = data.beacons.map(b => ({
                 ...b,
-                punchCode: b.punchCode || '0000000000000000000000000'
+                punchCode: b.punchCode || '0000000000000000000000000',
+                distance: b.distance || 0
             }));
             setState(data);
             setIsOfflineMode(false);
@@ -223,21 +224,22 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
-  const addBeacon = (code: string, level: Level, points: number, punchCode: string) => {
+  const addBeacon = (code: string, level: Level, points: number, punchCode: string, distance?: number) => {
     const newBeacon: Beacon = {
       id: generateId(),
       code,
       level,
       points,
-      punchCode
+      punchCode,
+      distance
     };
     const newState = { ...state, beacons: [...state.beacons, newBeacon] };
     syncState(newState);
   };
 
-  const updateBeacon = (id: string, code: string, level: Level, points: number, punchCode: string) => {
+  const updateBeacon = (id: string, code: string, level: Level, points: number, punchCode: string, distance?: number) => {
     const updatedBeacons = state.beacons.map(b => 
-      b.id === id ? { ...b, code, level, points, punchCode } : b
+      b.id === id ? { ...b, code, level, points, punchCode, distance } : b
     );
     const newState = { ...state, beacons: updatedBeacons };
     syncState(newState);
