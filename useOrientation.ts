@@ -37,16 +37,20 @@ export const getTimeLimit = (beaconCount: number): number => {
   return 600; // 10 min pour 3+
 };
 
+export type SyncStatus = 'connecting' | 'connected' | 'saving' | 'offline';
+
 export const useOrientation = () => {
   const [state, setState] = useState<GameState>(INITIAL_STATE);
   const [loading, setLoading] = useState(true);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
+  const [syncStatus, setSyncStatus] = useState<SyncStatus>('connecting');
 
   // Initialisation et Écoute Firebase
   useEffect(() => {
     let unsubscribe: () => void;
 
     const initFirestore = async () => {
+      setSyncStatus('connecting');
       try {
         const docRef = doc(db, 'sessions', 'current-race');
         
@@ -65,14 +69,21 @@ export const useOrientation = () => {
             }));
             setState(data);
             setIsOfflineMode(false);
+            setSyncStatus('connected');
           } else {
             console.log("🔥 Création du document initial");
+            setSyncStatus('saving');
             // Si le document n'existe pas, on l'initialise
-            setDoc(docRef, INITIAL_STATE).catch((err) => {
-              // Si l'écriture échoue (ex: droits ou config invalide), on passe en offline
-              console.warn("Écriture initiale échouée, passage en mode hors-ligne.", err);
-              setIsOfflineMode(true);
-            });
+            setDoc(docRef, INITIAL_STATE)
+              .then(() => {
+                setSyncStatus('connected');
+              })
+              .catch((err) => {
+                // Si l'écriture échoue (ex: droits ou config invalide), on passe en offline
+                console.warn("Écriture initiale échouée, passage en mode hors-ligne.", err);
+                setIsOfflineMode(true);
+                setSyncStatus('offline');
+              });
           }
           setLoading(false);
         }, (error) => {
@@ -80,6 +91,7 @@ export const useOrientation = () => {
           console.warn("Connexion Firebase impossible, passage en mode hors-ligne.", error.code);
           setIsOfflineMode(true);
           setLoading(false);
+          setSyncStatus('offline');
         });
 
       } catch (err) {
@@ -87,6 +99,7 @@ export const useOrientation = () => {
         console.warn("Erreur d'initialisation Firestore, passage en mode hors-ligne.");
         setIsOfflineMode(true);
         setLoading(false);
+        setSyncStatus('offline');
       }
     };
 
@@ -102,10 +115,16 @@ export const useOrientation = () => {
     setState(newState);
     if (!isOfflineMode) {
       console.log("☁️ Envoi des modifications vers Firebase...");
+      setSyncStatus('saving');
       const docRef = doc(db, 'sessions', 'current-race');
-      updateDoc(docRef, newState as any).catch(e => {
-        console.error("Échec de la synchronisation", e);
-      });
+      updateDoc(docRef, newState as any)
+        .then(() => {
+          setSyncStatus('connected');
+        })
+        .catch(e => {
+          console.error("Échec de la synchronisation", e);
+          setSyncStatus('offline');
+        });
     }
   };
 
@@ -257,6 +276,7 @@ export const useOrientation = () => {
     state,
     loading,
     isOfflineMode,
+    syncStatus,
     actions: {
       addClass,
       addClassWithStudents,

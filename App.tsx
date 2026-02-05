@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOrientation, getTimeLimit } from './useOrientation';
+import { useOrientation, getTimeLimit, SyncStatus } from './useOrientation';
 import { ActiveRun, Beacon } from './types';
 import { 
   Users, 
@@ -28,7 +28,11 @@ import {
   Clock,
   Wand2,
   Eraser,
-  Layers
+  Layers,
+  Cloud,
+  CloudOff,
+  CloudUpload,
+  Loader2
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -1406,7 +1410,7 @@ const AdminPanel = ({
 // --- MAIN APP ---
 
 function App() {
-  const { state, actions, loading, isOfflineMode } = useOrientation();
+  const { state, actions, loading, isOfflineMode, syncStatus } = useOrientation();
   const [activeTab, setActiveTab] = useState<'race' | 'stats' | 'admin'>('race');
 
   if (loading) {
@@ -1416,6 +1420,37 @@ function App() {
       </div>
     );
   }
+
+  // Helper pour l'affichage du statut
+  const getStatusIndicator = () => {
+    switch(syncStatus) {
+      case 'connecting':
+        return (
+          <div className="flex items-center gap-1.5 text-xs font-medium text-slate-500 bg-slate-100 px-2 py-1 rounded-full border border-slate-200">
+            <Loader2 size={14} className="animate-spin" /> Connexion...
+          </div>
+        );
+      case 'saving':
+        return (
+          <div className="flex items-center gap-1.5 text-xs font-medium text-blue-600 bg-blue-50 px-2 py-1 rounded-full border border-blue-200">
+            <CloudUpload size={14} className="animate-pulse" /> Sauvegarde...
+          </div>
+        );
+      case 'connected':
+        return (
+          <div className="flex items-center gap-1.5 text-xs font-medium text-green-600 bg-green-50 px-2 py-1 rounded-full border border-green-200">
+            <Cloud size={14} /> Connecté
+          </div>
+        );
+      case 'offline':
+      default:
+        return (
+          <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
+            <CloudOff size={14} /> Hors ligne
+          </div>
+        );
+    }
+  };
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
@@ -1431,11 +1466,7 @@ function App() {
             </h1>
           </div>
           
-          {isOfflineMode && (
-             <div className="flex items-center gap-1 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
-               <AlertTriangle size={12} /> Mode Hors-ligne (Demo)
-             </div>
-          )}
+          {getStatusIndicator()}
         </div>
       </header>
 
