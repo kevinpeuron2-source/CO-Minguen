@@ -53,6 +53,7 @@ export const useOrientation = () => {
         // Tentative d'abonnement aux changements
         unsubscribe = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
+            console.log("🔥 Données reçues de Firebase");
             const data = docSnap.data() as GameState;
             // Migration douce : si 'classes' n'existe pas dans la DB existante, on met un tableau vide
             if (!data.classes) data.classes = [];
@@ -65,10 +66,11 @@ export const useOrientation = () => {
             setState(data);
             setIsOfflineMode(false);
           } else {
+            console.log("🔥 Création du document initial");
             // Si le document n'existe pas, on l'initialise
-            setDoc(docRef, INITIAL_STATE).catch(() => {
+            setDoc(docRef, INITIAL_STATE).catch((err) => {
               // Si l'écriture échoue (ex: droits ou config invalide), on passe en offline
-              console.warn("Écriture initiale échouée, passage en mode hors-ligne.");
+              console.warn("Écriture initiale échouée, passage en mode hors-ligne.", err);
               setIsOfflineMode(true);
             });
           }
@@ -99,6 +101,7 @@ export const useOrientation = () => {
   const syncState = (newState: GameState) => {
     setState(newState);
     if (!isOfflineMode) {
+      console.log("☁️ Envoi des modifications vers Firebase...");
       const docRef = doc(db, 'sessions', 'current-race');
       updateDoc(docRef, newState as any).catch(e => {
         console.error("Échec de la synchronisation", e);
