@@ -1,5 +1,5 @@
-import React, { useState, useMemo } from 'react';
-import { Users, UserPlus, Shuffle, Save, FolderOpen, Trash2, Plus, UserMinus, ArrowRightLeft, CheckSquare, X, Users as UsersIcon } from 'lucide-react';
+import React, { useState, useMemo, useRef } from 'react';
+import { Users, UserPlus, Shuffle, Save, FolderOpen, Trash2, Plus, UserMinus, ArrowRightLeft, CheckSquare, X, Users as UsersIcon, Upload } from 'lucide-react';
 import { Student, Group, ClassRoom } from '../types';
 
 interface StudentManagerProps {
@@ -40,6 +40,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
   const [groupConfig, setGroupConfig] = useState({ count: 4, method: 'size' as 'count' | 'size' });
   const [classNameToSave, setClassNameToSave] = useState('');
   const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
+  const fileInputRef = useRef<HTMLInputElement>(null);
 
   // Calculate unassigned students
   const unassignedStudents = useMemo(() => {
@@ -50,6 +51,42 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
   const handleImport = () => {
     const names = inputText.split('\n').filter(n => n.trim() !== '');
     onImport(names);
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (!file) return;
+
+    const reader = new FileReader();
+    reader.onload = (e) => {
+      const text = e.target?.result as string;
+      if (!text) return;
+
+      // Basic CSV parsing logic
+      // 1. Split by new lines
+      const lines = text.split(/\r\n|\n/);
+      
+      const names = lines.map(line => {
+         // 2. Remove quotes often found in CSVs
+         let cleanLine = line.replace(/['"]+/g, '');
+         // 3. Replace common CSV delimiters (semicolon for Excel FR, comma for standard) with spaces
+         // This turns "Dupont;Jean" into "Dupont Jean"
+         cleanLine = cleanLine.replace(/[;,]/g, ' ');
+         return cleanLine.trim();
+      }).filter(line => line.length > 0); // Remove empty lines
+
+      // Update the textarea so the user can review before confirming import
+      setInputText(prev => {
+        const prefix = prev.trim() ? prev.trim() + '\n' : '';
+        return prefix + names.join('\n');
+      });
+      
+      // Reset input value to allow re-uploading the same file if needed
+      if (fileInputRef.current) {
+        fileInputRef.current.value = '';
+      }
+    };
+    reader.readAsText(file);
   };
 
   const handleCreateGroups = () => {
@@ -143,15 +180,37 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
       <div className="grid grid-cols-1 md:grid-cols-2 gap-8">
         {/* Import Section */}
         <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
-          <div className="flex items-center gap-3 mb-4">
-            <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
-              <UserPlus className="w-5 h-5" />
+          <div className="flex items-center justify-between mb-4">
+            <div className="flex items-center gap-3">
+              <div className="bg-blue-100 p-2 rounded-lg text-blue-600">
+                <UserPlus className="w-5 h-5" />
+              </div>
+              <h3 className="text-lg font-bold text-slate-800">1. Liste des Élèves</h3>
             </div>
-            <h3 className="text-lg font-bold text-slate-800">1. Liste des Élèves</h3>
+            
+            {/* CSV Import Button */}
+            <div>
+              <input 
+                type="file" 
+                ref={fileInputRef}
+                accept=".csv,.txt" 
+                className="hidden" 
+                onChange={handleFileUpload}
+              />
+              <button 
+                onClick={() => fileInputRef.current?.click()}
+                className="flex items-center gap-2 px-3 py-1.5 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-xs font-medium transition"
+                title="Importer un fichier CSV ou Texte"
+              >
+                <Upload className="w-3.5 h-3.5" />
+                Import CSV
+              </button>
+            </div>
           </div>
-          <p className="text-sm text-slate-500 mb-2">Copiez-collez votre liste (un nom par ligne)</p>
+
+          <p className="text-sm text-slate-500 mb-2">Copiez-collez votre liste ou importez un fichier.</p>
           <textarea 
-            className="w-full h-40 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none mb-3"
+            className="w-full h-40 border border-slate-300 rounded-lg p-3 text-sm focus:ring-2 focus:ring-blue-500 outline-none resize-none mb-3 font-mono"
             placeholder="Jean Dupont&#10;Marie Curie&#10;Albert Einstein..."
             value={inputText}
             onChange={(e) => setInputText(e.target.value)}
@@ -161,7 +220,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
             disabled={!inputText.trim()}
             className="w-full bg-slate-900 text-white py-2 rounded-lg hover:bg-slate-800 transition font-medium disabled:opacity-50 disabled:cursor-not-allowed"
           >
-            Importer la liste ({inputText.split('\n').filter(n => n.trim()).length})
+            Valider la liste ({inputText.split('\n').filter(n => n.trim()).length})
           </button>
         </div>
 
@@ -176,7 +235,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
           
           {students.length === 0 ? (
             <div className="flex-1 flex items-center justify-center text-slate-400 text-sm italic border-2 border-dashed border-slate-100 rounded-lg">
-              Veuillez d'abord importer des élèves
+              Veuillez d'abord valider une liste d'élèves
             </div>
           ) : (
             <div className="space-y-4">
