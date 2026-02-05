@@ -1,5 +1,4 @@
 {
   "name": "Minguen Orientation",
-  "description": "Application de gestion de course d'orientation avec chronomètres dynamiques, validation des balises et tableau de bord statistique.",
-  "requestFramePermissions": []
+  "description": "Application de gestion de course d'orientation avec chronomètres dynamiques, validation des balises et tableau de bord statistique."
 }

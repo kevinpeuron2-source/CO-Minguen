@@ -1,41 +1,33 @@
-export type BaliseStatus = 'inactive' | 'searching' | 'found' | 'timeout';
-
 export type Level = 'N1' | 'N2' | 'N3';
 
-export interface Student {
-  id: string;
-  name: string;
-}
+export type RunStatus = 'idle' | 'running' | 'completed' | 'failed';
 
-export interface Group {
+export interface Beacon {
   id: string;
-  name: string;
-  studentIds: string[];
-}
-
-export interface ClassRoom {
-  id: string;
-  name: string;
-  students: Student[];
-  groups: Group[];
-}
-
-export interface Balise {
-  id: string;
-  number: string;
+  code: string;
   level: Level;
-  status: BaliseStatus;
-  startTime: number | null; // Timestamp in ms
-  endTime: number | null;   // Timestamp in ms
-  duration: number;         // Duration in seconds (calculated on completion)
-  assignedEntityId?: string; // ID of the group OR student searching
-  assignedEntityName?: string; // Name snapshot for display
-  assignedEntityType?: 'group' | 'student';
+  points: number;
 }
 
-export interface GameStats {
-  totalFound: number;
-  totalTimeout: number;
-  avgTime: number; // in seconds
-  points: number;
+export interface StudentGroup {
+  id: string;
+  name: string;
+  members: string[]; // List of student names
+  totalPoints: number;
+}
+
+export interface ActiveRun {
+  id: string;
+  groupId: string;
+  beaconIds: string[]; // IDs of beacons being searched for
+  startTime: number; // Timestamp in ms
+  durationLimit: number; // In seconds
+  status: RunStatus;
+  endTime?: number;
+}
+
+export interface GameState {
+  beacons: Beacon[];
+  groups: StudentGroup[];
+  runs: ActiveRun[];
 }
