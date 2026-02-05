@@ -9,6 +9,12 @@ export interface Beacon {
   points: number;
 }
 
+export interface ClassRoom {
+  id: string;
+  name: string; // Ex: "6ème B"
+  students: string[]; // Liste des noms d'élèves
+}
+
 export interface StudentGroup {
   id: string;
   name: string;
@@ -28,6 +34,7 @@ export interface ActiveRun {
 
 export interface GameState {
   beacons: Beacon[];
+  classes: ClassRoom[]; // Ajout des classes
   groups: StudentGroup[];
   runs: ActiveRun[];
 }

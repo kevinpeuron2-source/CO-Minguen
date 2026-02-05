@@ -1,16 +1,19 @@
 import React, { useState, useEffect } from 'react';
 import { useOrientation, getTimeLimit } from './useOrientation';
-import { Beacon, StudentGroup, ActiveRun } from './types';
+import { ActiveRun } from './types';
 import { 
   Users, 
   Flag, 
   Timer, 
-  Plus, 
   Trophy, 
   Settings, 
   CheckCircle2, 
   XCircle, 
-  AlertTriangle 
+  AlertTriangle,
+  School,
+  Plus,
+  Trash2,
+  UserPlus
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -29,7 +32,7 @@ const LevelBadge = ({ level }: { level: string }) => {
     N2: 'bg-n2/20 text-n2 border-n2/50 border',
     N3: 'bg-n3/20 text-n3 border-n3/50 border',
   };
-  return <Badge className={colors[level as keyof typeof colors]}>{level}</Badge>;
+  return <Badge className={colors[level as keyof typeof colors] || 'bg-slate-100'}>{level}</Badge>;
 };
 
 // --- SUB-VIEWS ---
@@ -43,9 +46,9 @@ const RaceControl = ({
 }) => {
   const [selectedGroup, setSelectedGroup] = useState<string>('');
   const [selectedBeacons, setSelectedBeacons] = useState<string[]>([]);
-  const [timeUpdate, setTimeUpdate] = useState(0);
+  // UseEffect pour forcer le rafraîchissement du timer UI chaque seconde
+  const [, setTimeUpdate] = useState(0);
 
-  // Timer tick for UI updates
   useEffect(() => {
     const interval = setInterval(() => setTimeUpdate(prev => prev + 1), 1000);
     return () => clearInterval(interval);
@@ -142,9 +145,13 @@ const RaceControl = ({
               className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-slate-50"
             >
               <option value="">Sélectionner un groupe...</option>
-              {availableGroups.map(g => (
-                <option key={g.id} value={g.id}>{g.name}</option>
-              ))}
+              {availableGroups.length > 0 ? (
+                availableGroups.map(g => (
+                  <option key={g.id} value={g.id}>{g.name}</option>
+                ))
+              ) : (
+                <option value="" disabled>Aucun groupe disponible (Créer dans Config)</option>
+              )}
             </select>
           </div>
 
@@ -213,29 +220,33 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
         <h2 className="text-xl font-bold mb-4 flex items-center gap-2">
           <Trophy className="text-yellow-500" /> Classement
         </h2>
-        <div className="space-y-3">
-          {sortedGroups.map((g, idx) => (
-            <div key={g.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
-              <div className="flex items-center gap-3">
-                <span className={clsx(
-                  "w-8 h-8 flex items-center justify-center rounded-full font-bold",
-                  idx === 0 ? "bg-yellow-100 text-yellow-700" : 
-                  idx === 1 ? "bg-slate-200 text-slate-700" :
-                  idx === 2 ? "bg-orange-100 text-orange-700" : "text-slate-500"
-                )}>
-                  {idx + 1}
-                </span>
-                <div>
-                  <div className="font-bold text-slate-800">{g.name}</div>
-                  <div className="text-xs text-slate-500">{g.members.join(', ')}</div>
+        {sortedGroups.length === 0 ? (
+           <p className="text-slate-400 text-center py-8">Aucun groupe enregistré</p>
+        ) : (
+          <div className="space-y-3">
+            {sortedGroups.map((g, idx) => (
+              <div key={g.id} className="flex items-center justify-between p-3 bg-slate-50 rounded-lg border border-slate-100">
+                <div className="flex items-center gap-3">
+                  <span className={clsx(
+                    "w-8 h-8 flex items-center justify-center rounded-full font-bold",
+                    idx === 0 ? "bg-yellow-100 text-yellow-700" : 
+                    idx === 1 ? "bg-slate-200 text-slate-700" :
+                    idx === 2 ? "bg-orange-100 text-orange-700" : "text-slate-500"
+                  )}>
+                    {idx + 1}
+                  </span>
+                  <div>
+                    <div className="font-bold text-slate-800">{g.name}</div>
+                    <div className="text-xs text-slate-500">{g.members.join(', ')}</div>
+                  </div>
+                </div>
+                <div className="font-mono font-bold text-xl text-blue-600">
+                  {g.totalPoints} pts
                 </div>
               </div>
-              <div className="font-mono font-bold text-xl text-blue-600">
-                {g.totalPoints} pts
-              </div>
-            </div>
-          ))}
-        </div>
+            ))}
+          </div>
+        )}
       </div>
 
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
@@ -254,10 +265,9 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
             </div>
           </div>
           <div className="p-4 bg-purple-50 rounded-xl col-span-2">
-             <div className="text-purple-600 text-sm font-bold uppercase tracking-wide">Balise la plus trouvée</div>
-             <div className="text-xl font-bold text-slate-800 mt-1">
-                {/* Simple logic for most found */}
-                {state.runs.length === 0 ? '-' : 'N/A (Calcul en cours)'}
+             <div className="text-purple-600 text-sm font-bold uppercase tracking-wide">Mode de fonctionnement</div>
+             <div className="text-sm font-medium text-slate-600 mt-1">
+                L'application calcule les temps et les points localement et tente de synchroniser avec le serveur si disponible.
              </div>
           </div>
         </div>
@@ -273,20 +283,55 @@ const AdminPanel = ({
   state: ReturnType<typeof useOrientation>['state'], 
   actions: ReturnType<typeof useOrientation>['actions'] 
 }) => {
-  const [newGroup, setNewGroup] = useState('');
-  const [members, setMembers] = useState('');
+  const [adminTab, setAdminTab] = useState<'classes' | 'beacons'>('classes');
+
+  // State pour les formulaires
+  const [newClass, setNewClass] = useState('');
+  const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
+  const [studentsInput, setStudentsInput] = useState('');
+  
+  // State pour la création de groupe
+  const [selectedStudentsForGroup, setSelectedStudentsForGroup] = useState<string[]>([]);
+  const [newGroupName, setNewGroupName] = useState('');
+
   const [beaconCode, setBeaconCode] = useState('');
   const [beaconLevel, setBeaconLevel] = useState('N1');
 
-  const handleAddGroup = (e: React.FormEvent) => {
+  // -- CLASSES HANDLERS --
+  const handleAddClass = (e: React.FormEvent) => {
     e.preventDefault();
-    if(newGroup && members) {
-      actions.addGroup(newGroup, members.split(',').map(s => s.trim()));
-      setNewGroup('');
-      setMembers('');
+    if(newClass.trim()) {
+      actions.addClass(newClass.trim());
+      setNewClass('');
     }
   };
 
+  const handleAddStudents = () => {
+    if(selectedClassId && studentsInput.trim()) {
+      // Sépare par saut de ligne ou virgule
+      const students = studentsInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
+      actions.addStudentsToClass(selectedClassId, students);
+      setStudentsInput('');
+    }
+  };
+
+  const toggleStudentSelection = (student: string) => {
+    if (selectedStudentsForGroup.includes(student)) {
+      setSelectedStudentsForGroup(prev => prev.filter(s => s !== student));
+    } else {
+      setSelectedStudentsForGroup(prev => [...prev, student]);
+    }
+  };
+
+  const handleCreateGroupFromSelection = () => {
+    if (newGroupName && selectedStudentsForGroup.length > 0) {
+      actions.addGroup(newGroupName, selectedStudentsForGroup);
+      setNewGroupName('');
+      setSelectedStudentsForGroup([]);
+    }
+  };
+
+  // -- BEACONS HANDLERS --
   const handleAddBeacon = (e: React.FormEvent) => {
     e.preventDefault();
     if(beaconCode) {
@@ -296,77 +341,243 @@ const AdminPanel = ({
     }
   };
 
+  const selectedClass = state.classes.find(c => c.id === selectedClassId);
+
   return (
-    <div className="grid md:grid-cols-2 gap-8">
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Users size={20} /> Ajouter un groupe</h3>
-        <form onSubmit={handleAddGroup} className="space-y-4">
-          <div>
-            <label className="block text-sm font-medium mb-1">Nom du groupe</label>
-            <input 
-              className="w-full p-2 border rounded-lg" 
-              value={newGroup} 
-              onChange={e => setNewGroup(e.target.value)} 
-              placeholder="Ex: Les Rapides"
-            />
-          </div>
-          <div>
-            <label className="block text-sm font-medium mb-1">Élèves (séparés par virgule)</label>
-            <input 
-              className="w-full p-2 border rounded-lg" 
-              value={members} 
-              onChange={e => setMembers(e.target.value)} 
-              placeholder="Léo, Tom..."
-            />
-          </div>
-          <button className="w-full bg-slate-800 text-white py-2 rounded-lg font-medium hover:bg-slate-900">
-            Créer le groupe
-          </button>
-        </form>
+    <div className="space-y-6">
+      <div className="flex gap-2 border-b border-slate-200 pb-2">
+        <button
+          onClick={() => setAdminTab('classes')}
+          className={clsx(
+            "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+            adminTab === 'classes' ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
+          )}
+        >
+          Classes & Élèves
+        </button>
+        <button
+          onClick={() => setAdminTab('beacons')}
+          className={clsx(
+            "px-4 py-2 rounded-lg text-sm font-medium transition-colors",
+            adminTab === 'beacons' ? "bg-slate-800 text-white" : "text-slate-500 hover:bg-slate-100"
+          )}
+        >
+          Balises (Terrain)
+        </button>
       </div>
 
-      <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Flag size={20} /> Ajouter une balise</h3>
-        <form onSubmit={handleAddBeacon} className="space-y-4">
-          <div className="flex gap-4">
-            <div className="flex-1">
-              <label className="block text-sm font-medium mb-1">Numéro</label>
-              <input 
-                className="w-full p-2 border rounded-lg" 
-                value={beaconCode} 
-                onChange={e => setBeaconCode(e.target.value)} 
-                placeholder="42"
-              />
+      {adminTab === 'classes' && (
+        <div className="grid md:grid-cols-12 gap-6">
+          {/* COLONNE GAUCHE: Liste des Classes */}
+          <div className="md:col-span-4 space-y-4">
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+              <h3 className="font-bold mb-3 flex items-center gap-2"><School size={18} /> Mes Classes</h3>
+              <form onSubmit={handleAddClass} className="flex gap-2 mb-4">
+                <input 
+                  className="flex-1 p-2 border rounded-lg text-sm" 
+                  value={newClass} 
+                  onChange={e => setNewClass(e.target.value)} 
+                  placeholder="Ex: 6ème A"
+                />
+                <button className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
+                  <Plus size={18} />
+                </button>
+              </form>
+              <div className="space-y-2">
+                {state.classes.map(c => (
+                  <button
+                    key={c.id}
+                    onClick={() => {
+                      setSelectedClassId(c.id);
+                      setSelectedStudentsForGroup([]);
+                    }}
+                    className={clsx(
+                      "w-full text-left p-3 rounded-lg border transition-all flex justify-between items-center",
+                      selectedClassId === c.id 
+                        ? "bg-blue-50 border-blue-200 text-blue-800 font-medium" 
+                        : "hover:bg-slate-50 border-slate-100"
+                    )}
+                  >
+                    <span>{c.name}</span>
+                    <span className="text-xs bg-white px-2 py-1 rounded-full border text-slate-500">
+                      {c.students.length} élèves
+                    </span>
+                  </button>
+                ))}
+                {state.classes.length === 0 && (
+                  <p className="text-sm text-slate-400 text-center py-4">Ajoutez une classe pour commencer</p>
+                )}
+              </div>
             </div>
-            <div className="w-1/3">
-              <label className="block text-sm font-medium mb-1">Niveau</label>
-              <select 
-                className="w-full p-2 border rounded-lg" 
-                value={beaconLevel} 
-                onChange={e => setBeaconLevel(e.target.value)}
-              >
-                <option value="N1">N1</option>
-                <option value="N2">N2</option>
-                <option value="N3">N3</option>
-              </select>
+
+            {/* Liste des Groupes Actuels */}
+            <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
+              <h3 className="font-bold mb-3 flex items-center gap-2"><Users size={18} /> Groupes formés</h3>
+              <div className="space-y-2 max-h-60 overflow-y-auto">
+                {state.groups.map(g => (
+                   <div key={g.id} className="text-sm p-2 bg-slate-50 rounded border flex justify-between items-center">
+                     <div>
+                       <div className="font-medium text-slate-700">{g.name}</div>
+                       <div className="text-xs text-slate-500 truncate max-w-[150px]">{g.members.join(', ')}</div>
+                     </div>
+                     <button 
+                       onClick={() => actions.removeGroup(g.id)}
+                       className="text-red-400 hover:text-red-600 p-1"
+                     >
+                       <Trash2 size={14} />
+                     </button>
+                   </div>
+                ))}
+                {state.groups.length === 0 && <p className="text-xs text-slate-400">Aucun groupe formé.</p>}
+              </div>
             </div>
           </div>
-          <button className="w-full bg-slate-800 text-white py-2 rounded-lg font-medium hover:bg-slate-900">
-            Ajouter la balise
-          </button>
-        </form>
 
-        <div className="mt-6">
-          <h4 className="font-medium text-sm text-slate-500 mb-2">Balises existantes</h4>
-          <div className="flex flex-wrap gap-2 max-h-48 overflow-y-auto">
-            {state.beacons.map(b => (
-              <span key={b.id} className="bg-slate-100 border px-2 py-1 rounded text-xs font-mono">
-                {b.code} ({b.level})
-              </span>
-            ))}
+          {/* COLONNE DROITE: Gestion de la classe sélectionnée */}
+          <div className="md:col-span-8">
+            {selectedClass ? (
+              <div className="space-y-6">
+                {/* Ajout d'élèves */}
+                <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+                  <h3 className="font-bold text-lg mb-4 text-slate-800">Gestion de la {selectedClass.name}</h3>
+                  <div className="mb-4">
+                    <label className="block text-sm font-medium mb-1 text-slate-600">Ajouter des élèves (copier/coller liste)</label>
+                    <div className="flex gap-2">
+                      <textarea 
+                        className="flex-1 p-2 border rounded-lg text-sm h-20" 
+                        value={studentsInput} 
+                        onChange={e => setStudentsInput(e.target.value)} 
+                        placeholder="Jean Dupont, Marie Curie..."
+                      />
+                      <button 
+                        onClick={handleAddStudents}
+                        className="bg-slate-800 text-white px-4 rounded-lg font-medium hover:bg-slate-900 flex flex-col items-center justify-center gap-1"
+                      >
+                        <UserPlus size={18} /> Ajouter
+                      </button>
+                    </div>
+                  </div>
+
+                  {/* Liste des élèves & Création de groupe */}
+                  <div className="border-t pt-4 mt-4">
+                     <div className="flex justify-between items-end mb-3">
+                        <h4 className="font-medium text-slate-700">Liste des élèves ({selectedClass.students.length})</h4>
+                        {selectedStudentsForGroup.length > 0 && (
+                          <div className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-bottom-2">
+                            <input 
+                              placeholder="Nom du groupe (ex: Groupe 1)" 
+                              className="text-sm p-1.5 rounded border border-blue-200 outline-none w-48"
+                              value={newGroupName}
+                              onChange={e => setNewGroupName(e.target.value)}
+                            />
+                            <button 
+                              onClick={handleCreateGroupFromSelection}
+                              disabled={!newGroupName}
+                              className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-bold hover:bg-blue-700 disabled:opacity-50"
+                            >
+                              Créer le groupe ({selectedStudentsForGroup.length})
+                            </button>
+                          </div>
+                        )}
+                     </div>
+
+                     {selectedClass.students.length === 0 ? (
+                       <p className="text-sm text-slate-400 italic">Aucun élève dans cette classe.</p>
+                     ) : (
+                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                         {selectedClass.students.map((student, idx) => (
+                           <button
+                             key={idx}
+                             onClick={() => toggleStudentSelection(student)}
+                             className={clsx(
+                               "text-sm p-2 rounded-lg border text-left transition-all",
+                               selectedStudentsForGroup.includes(student)
+                                ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105"
+                                : "bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300"
+                             )}
+                           >
+                             {student}
+                           </button>
+                         ))}
+                       </div>
+                     )}
+                     <p className="text-xs text-slate-400 mt-2 text-right">
+                       Sélectionnez plusieurs élèves pour créer un groupe rapidement.
+                     </p>
+                  </div>
+                </div>
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 p-12">
+                <School size={48} className="mb-4 opacity-20" />
+                <p>Sélectionnez une classe à gauche pour gérer les élèves et les groupes</p>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
+
+      {adminTab === 'beacons' && (
+        <div className="grid md:grid-cols-2 gap-8">
+           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Flag size={20} /> Ajouter une balise</h3>
+            <form onSubmit={handleAddBeacon} className="space-y-4">
+              <div className="flex gap-4">
+                <div className="flex-1">
+                  <label className="block text-sm font-medium mb-1">Numéro</label>
+                  <input 
+                    className="w-full p-2 border rounded-lg" 
+                    value={beaconCode} 
+                    onChange={e => setBeaconCode(e.target.value)} 
+                    placeholder="42"
+                  />
+                </div>
+                <div className="w-1/3">
+                  <label className="block text-sm font-medium mb-1">Niveau</label>
+                  <select 
+                    className="w-full p-2 border rounded-lg" 
+                    value={beaconLevel} 
+                    onChange={e => setBeaconLevel(e.target.value)}
+                  >
+                    <option value="N1">N1</option>
+                    <option value="N2">N2</option>
+                    <option value="N3">N3</option>
+                  </select>
+                </div>
+              </div>
+              <button className="w-full bg-slate-800 text-white py-2 rounded-lg font-medium hover:bg-slate-900">
+                Ajouter la balise
+              </button>
+            </form>
+          </div>
+
+          <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
+            <h4 className="font-bold text-lg mb-4 text-slate-800">Balises existantes</h4>
+            <div className="flex flex-wrap gap-2 max-h-[400px] overflow-y-auto content-start">
+              {state.beacons.map(b => (
+                <div key={b.id} className="relative group">
+                  <span className="bg-slate-50 border px-3 py-1.5 rounded text-sm font-mono font-bold flex items-center gap-2">
+                    {b.code} 
+                    <span className={clsx(
+                      "text-[10px] px-1 rounded border",
+                      b.level === 'N1' ? "text-green-600 border-green-200 bg-green-50" :
+                      b.level === 'N2' ? "text-yellow-600 border-yellow-200 bg-yellow-50" :
+                      "text-red-600 border-red-200 bg-red-50"
+                    )}>{b.level}</span>
+                  </span>
+                  <button 
+                    onClick={() => actions.removeBeacon(b.id)}
+                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
+                  >
+                    <XCircle size={12} fill="white" className="text-red-500" />
+                  </button>
+                </div>
+              ))}
+              {state.beacons.length === 0 && <p className="text-slate-400 italic">Aucune balise configurée.</p>}
+            </div>
+          </div>
+        </div>
+      )}
     </div>
   );
 };
@@ -415,7 +626,7 @@ function App() {
       </main>
 
       {/* Bottom Navigation */}
-      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 pb-safe shadow-lg">
+      <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 pb-6 shadow-lg z-20">
         <div className="max-w-md mx-auto flex justify-around">
           <button 
             onClick={() => setActiveTab('race')}

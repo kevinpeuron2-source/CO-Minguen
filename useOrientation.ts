@@ -1,16 +1,22 @@
 import { useState, useEffect } from 'react';
 import { 
-  collection, 
   onSnapshot, 
   doc, 
   setDoc, 
-  updateDoc,
-  arrayUnion
+  updateDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { GameState, Beacon, StudentGroup, ActiveRun, Level } from './types';
+import { GameState, Beacon, StudentGroup, ActiveRun, Level, ClassRoom } from './types';
 
-// Default initial state
+// Fonction utilitaire pour générer des IDs uniques (compatible vieux navigateurs)
+const generateId = () => {
+  if (typeof crypto !== 'undefined' && crypto.randomUUID) {
+    return crypto.randomUUID();
+  }
+  return Date.now().toString(36) + Math.random().toString(36).substr(2);
+};
+
+// État initial par défaut
 const INITIAL_STATE: GameState = {
   beacons: [
     { id: 'b1', code: '31', level: 'N1', points: 10 },
@@ -19,18 +25,16 @@ const INITIAL_STATE: GameState = {
     { id: 'b4', code: '46', level: 'N2', points: 20 },
     { id: 'b5', code: '60', level: 'N3', points: 30 },
   ],
-  groups: [
-    { id: 'g1', name: 'Équipe Alpha', members: ['Léo', 'Tom'], totalPoints: 0 },
-    { id: 'g2', name: 'Équipe Beta', members: ['Sarah', 'Mia'], totalPoints: 0 },
-  ],
+  classes: [], // Nouvelle liste de classes vide par défaut
+  groups: [],
   runs: []
 };
 
-// Helper to calculate time limits
+// Helper pour calculer les limites de temps
 export const getTimeLimit = (beaconCount: number): number => {
   if (beaconCount <= 1) return 360; // 6 min
   if (beaconCount === 2) return 480; // 8 min
-  return 600; // 10 min for 3+
+  return 600; // 10 min pour 3+
 };
 
 export const useOrientation = () => {
@@ -38,46 +42,106 @@ export const useOrientation = () => {
   const [loading, setLoading] = useState(true);
   const [isOfflineMode, setIsOfflineMode] = useState(false);
 
-  // Initialize Firebase Listener
+  // Initialisation et Écoute Firebase
   useEffect(() => {
-    try {
-      const docRef = doc(db, 'sessions', 'current-race');
-      const unsubscribe = onSnapshot(docRef, (docSnap) => {
-        if (docSnap.exists()) {
-          setState(docSnap.data() as GameState);
-          setIsOfflineMode(false);
-        } else {
-          // Initialize if empty
-          setDoc(docRef, INITIAL_STATE);
-        }
-        setLoading(false);
-      }, (error) => {
-        console.warn("Firebase connection failed (likely config), falling back to local state.", error);
+    let unsubscribe: () => void;
+
+    const initFirestore = async () => {
+      try {
+        const docRef = doc(db, 'sessions', 'current-race');
+        
+        // Tentative d'abonnement aux changements
+        unsubscribe = onSnapshot(docRef, (docSnap) => {
+          if (docSnap.exists()) {
+            const data = docSnap.data() as GameState;
+            // Migration douce : si 'classes' n'existe pas dans la DB existante, on met un tableau vide
+            if (!data.classes) data.classes = [];
+            setState(data);
+            setIsOfflineMode(false);
+          } else {
+            // Si le document n'existe pas, on l'initialise
+            setDoc(docRef, INITIAL_STATE).catch(() => {
+              // Si l'écriture échoue (ex: droits ou config invalide), on passe en offline
+              console.warn("Écriture initiale échouée, passage en mode hors-ligne.");
+              setIsOfflineMode(true);
+            });
+          }
+          setLoading(false);
+        }, (error) => {
+          // Callback d'erreur Firestore (ex: pas de réseau, mauvaise config)
+          console.warn("Connexion Firebase impossible, passage en mode hors-ligne.", error.code);
+          setIsOfflineMode(true);
+          setLoading(false);
+        });
+
+      } catch (err) {
+        // Erreur synchrone d'initialisation
+        console.warn("Erreur d'initialisation Firestore, passage en mode hors-ligne.");
         setIsOfflineMode(true);
         setLoading(false);
-      });
-      return () => unsubscribe();
-    } catch (err) {
-      console.warn("Firebase init error, using offline mode.");
-      setIsOfflineMode(true);
-      setLoading(false);
-    }
+      }
+    };
+
+    initFirestore();
+
+    return () => {
+      if (unsubscribe) unsubscribe();
+    };
   }, []);
 
-  // Sync state helper (for offline mode)
+  // Helper de synchronisation (gère le mode hors-ligne)
   const syncState = (newState: GameState) => {
     setState(newState);
     if (!isOfflineMode) {
       const docRef = doc(db, 'sessions', 'current-race');
-      updateDoc(docRef, newState as any).catch(e => console.error("Sync failed", e));
+      updateDoc(docRef, newState as any).catch(e => {
+        console.error("Échec de la synchronisation", e);
+      });
     }
   };
 
   // --- ACTIONS ---
 
+  // Gestion des classes
+  const addClass = (name: string) => {
+    const newClass: ClassRoom = {
+      id: generateId(),
+      name,
+      students: []
+    };
+    const newState = { ...state, classes: [...state.classes, newClass] };
+    syncState(newState);
+  };
+
+  const addStudentsToClass = (classId: string, studentNames: string[]) => {
+    const classIndex = state.classes.findIndex(c => c.id === classId);
+    if (classIndex === -1) return;
+
+    const updatedClasses = [...state.classes];
+    // On ajoute les étudiants sans doublons
+    const currentStudents = new Set(updatedClasses[classIndex].students);
+    studentNames.forEach(name => {
+      if (name.trim()) currentStudents.add(name.trim());
+    });
+    
+    updatedClasses[classIndex] = {
+      ...updatedClasses[classIndex],
+      students: Array.from(currentStudents)
+    };
+    
+    syncState({ ...state, classes: updatedClasses });
+  };
+
+  const removeClass = (classId: string) => {
+     const newState = { ...state, classes: state.classes.filter(c => c.id !== classId) };
+     syncState(newState);
+  };
+
+  // Gestion des groupes et courses
+
   const addGroup = (name: string, members: string[]) => {
     const newGroup: StudentGroup = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       name,
       members,
       totalPoints: 0
@@ -86,10 +150,15 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
+  const removeGroup = (groupId: string) => {
+    const newState = { ...state, groups: state.groups.filter(g => g.id !== groupId) };
+    syncState(newState);
+  };
+
   const startRun = (groupId: string, beaconIds: string[]) => {
     const duration = getTimeLimit(beaconIds.length);
     const newRun: ActiveRun = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       groupId,
       beaconIds,
       startTime: Date.now(),
@@ -97,8 +166,10 @@ export const useOrientation = () => {
       status: 'running'
     };
 
-    // Remove any existing active runs for this group to prevent duplicates
-    const filteredRuns = state.runs.filter(r => r.groupId !== groupId || r.status === 'completed' || r.status === 'failed');
+    // Nettoyer les courses précédentes
+    const filteredRuns = state.runs.filter(r => 
+      r.groupId !== groupId || r.status === 'completed' || r.status === 'failed'
+    );
     
     const newState = { ...state, runs: [...filteredRuns, newRun] };
     syncState(newState);
@@ -111,14 +182,14 @@ export const useOrientation = () => {
     const run = state.runs[runIndex];
     const newStatus = success ? 'completed' : 'failed';
     
-    // Calculate points
+    // Calcul des points
     let pointsToAdd = 0;
     if (success) {
       const runBeacons = state.beacons.filter(b => run.beaconIds.includes(b.id));
       pointsToAdd = runBeacons.reduce((acc, b) => acc + b.points, 0);
     }
 
-    // Update Group Points
+    // Mise à jour du groupe
     const groupIndex = state.groups.findIndex(g => g.id === run.groupId);
     const updatedGroups = [...state.groups];
     if (groupIndex !== -1) {
@@ -128,7 +199,7 @@ export const useOrientation = () => {
       };
     }
 
-    // Update Run
+    // Mise à jour de la course
     const updatedRuns = [...state.runs];
     updatedRuns[runIndex] = { ...run, status: newStatus, endTime: Date.now() };
 
@@ -138,7 +209,7 @@ export const useOrientation = () => {
 
   const addBeacon = (code: string, level: Level, points: number) => {
     const newBeacon: Beacon = {
-      id: crypto.randomUUID(),
+      id: generateId(),
       code,
       level,
       points
@@ -147,15 +218,25 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
+  const removeBeacon = (beaconId: string) => {
+    const newState = { ...state, beacons: state.beacons.filter(b => b.id !== beaconId) };
+    syncState(newState);
+  };
+
   return {
     state,
     loading,
     isOfflineMode,
     actions: {
+      addClass,
+      addStudentsToClass,
+      removeClass,
       addGroup,
+      removeGroup,
       startRun,
       completeRun,
-      addBeacon
+      addBeacon,
+      removeBeacon
     }
   };
 };
