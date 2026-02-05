@@ -88,20 +88,34 @@ const PunchGrid = ({
 
 // --- CSV IMPORTER COMPONENT ---
 
-const CsvImporter = ({ onImport, onCancel }: { onImport: (className: string, students: string[]) => void, onCancel: () => void }) => {
+const CsvImporter = ({ 
+  onImport, 
+  onCancel,
+  targetClassName 
+}: { 
+  onImport: (className: string, students: string[]) => void, 
+  onCancel: () => void,
+  targetClassName?: string
+}) => {
   const [rawRows, setRawRows] = useState<string[][]>([]);
   const [headers, setHeaders] = useState<string[]>([]);
   const [step, setStep] = useState<'upload' | 'mapping'>('upload');
   
   // Form State
-  const [className, setClassName] = useState('');
+  const [className, setClassName] = useState(targetClassName || '');
   const [colFirstName, setColFirstName] = useState<string>('');
   const [colLastName, setColLastName] = useState<string>('');
+
+  useEffect(() => {
+    if (targetClassName) setClassName(targetClassName);
+  }, [targetClassName]);
 
   const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
     if (e.target.files && e.target.files[0]) {
       const selectedFile = e.target.files[0];
-      setClassName(selectedFile.name.replace('.csv', ''));
+      if (!targetClassName) {
+        setClassName(selectedFile.name.replace('.csv', ''));
+      }
       
       const reader = new FileReader();
       reader.onload = (event) => {
@@ -209,7 +223,11 @@ const CsvImporter = ({ onImport, onCancel }: { onImport: (className: string, stu
             <input 
               value={className}
               onChange={(e) => setClassName(e.target.value)}
-              className="w-full p-2 border rounded-lg bg-white"
+              disabled={!!targetClassName}
+              className={clsx(
+                "w-full p-2 border rounded-lg",
+                targetClassName ? "bg-slate-100 text-slate-500 cursor-not-allowed" : "bg-white"
+              )}
             />
           </div>
           
@@ -550,8 +568,13 @@ const AdminPanel = ({
     }
   };
 
-  const handleCsvImport = (className: string, students: string[]) => {
-    actions.addClassWithStudents(className, students);
+  const handleCsvImport = (importedClassName: string, students: string[]) => {
+    if (selectedClassId) {
+      actions.addStudentsToClass(selectedClassId, students);
+    } else {
+      // Fallback si jamais on arrivait ici sans classe sélectionnée (ne devrait plus arriver)
+      actions.addClassWithStudents(importedClassName, students);
+    }
     setShowCsvImport(false);
   };
 
@@ -645,27 +668,17 @@ const AdminPanel = ({
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
               <h3 className="font-bold mb-3 flex items-center gap-2"><School size={18} /> Mes Classes</h3>
               
-              {!showCsvImport ? (
-                <>
-                  <form onSubmit={handleAddClass} className="flex gap-2 mb-4">
-                    <input 
-                      className="flex-1 p-2 border rounded-lg text-sm" 
-                      value={newClass} 
-                      onChange={e => setNewClass(e.target.value)} 
-                      placeholder="Ex: 6ème A"
-                    />
-                    <button className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
-                      <Plus size={18} />
-                    </button>
-                  </form>
-                  <button 
-                    onClick={() => setShowCsvImport(true)}
-                    className="w-full mb-4 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-slate-200"
-                  >
-                    <FileSpreadsheet size={16} /> Importer CSV
-                  </button>
-                </>
-              ) : null}
+              <form onSubmit={handleAddClass} className="flex gap-2 mb-4">
+                <input 
+                  className="flex-1 p-2 border rounded-lg text-sm" 
+                  value={newClass} 
+                  onChange={e => setNewClass(e.target.value)} 
+                  placeholder="Ex: 6ème A"
+                />
+                <button className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
+                  <Plus size={18} />
+                </button>
+              </form>
 
               <div className="space-y-2">
                 {state.classes.map(c => (
@@ -724,6 +737,7 @@ const AdminPanel = ({
               <CsvImporter 
                 onImport={handleCsvImport} 
                 onCancel={() => setShowCsvImport(false)} 
+                targetClassName={selectedClass?.name}
               />
             ) : selectedClass ? (
               <div className="space-y-6">
@@ -731,13 +745,22 @@ const AdminPanel = ({
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-lg text-slate-800">Gestion de la {selectedClass.name}</h3>
-                    <button 
-                      onClick={() => actions.removeClass(selectedClass.id)}
-                      className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
-                      title="Supprimer la classe"
-                    >
-                      <Trash2 size={18} />
-                    </button>
+                    <div className="flex gap-2">
+                       <button 
+                          onClick={() => setShowCsvImport(true)}
+                          className="flex items-center gap-2 bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-slate-200"
+                          title="Importer liste CSV"
+                        >
+                          <FileSpreadsheet size={16} className="text-green-600" /> Importer CSV
+                        </button>
+                        <button 
+                          onClick={() => actions.removeClass(selectedClass.id)}
+                          className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors border border-transparent hover:border-red-100"
+                          title="Supprimer la classe"
+                        >
+                          <Trash2 size={18} />
+                        </button>
+                    </div>
                   </div>
                   
                   <div className="mb-4">
@@ -811,12 +834,6 @@ const AdminPanel = ({
               <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 p-12">
                 <School size={48} className="mb-4 opacity-20" />
                 <p>Sélectionnez une classe à gauche pour gérer les élèves</p>
-                <button 
-                   onClick={() => setShowCsvImport(true)}
-                   className="mt-4 text-blue-600 hover:underline text-sm font-medium"
-                >
-                  ou importez un fichier CSV
-                </button>
               </div>
             )}
           </div>
