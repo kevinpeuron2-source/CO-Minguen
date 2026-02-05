@@ -22,7 +22,13 @@ import {
   Stamp,
   MapPin,
   TableProperties,
-  BarChart3
+  BarChart3,
+  ChevronDown,
+  ChevronUp,
+  Clock,
+  Wand2,
+  Eraser,
+  Layers
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -423,13 +429,22 @@ const RaceControl = ({
                   key={b.id}
                   onClick={() => toggleBeacon(b.id)}
                   className={clsx(
-                    "px-3 py-1.5 rounded-full text-sm font-bold border transition-all",
+                    "px-3 py-1.5 rounded-full text-sm font-bold border transition-all flex items-center gap-1",
                     selectedBeacons.includes(b.id) 
                       ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105" 
                       : "bg-white text-slate-600 border-slate-300 hover:border-blue-400"
                   )}
                 >
-                  {b.code} ({b.level})
+                  {b.code} 
+                  <span className="opacity-70 text-xs font-normal">({b.level})</span>
+                  {b.distance && (
+                     <span className={clsx(
+                       "ml-1 text-[10px] px-1 rounded",
+                       selectedBeacons.includes(b.id) ? "bg-white/20" : "bg-slate-100 text-slate-500"
+                     )}>
+                       {b.distance}m
+                     </span>
+                  )}
                 </button>
               ))}
             </div>
@@ -469,12 +484,72 @@ const RaceControl = ({
   );
 };
 
-const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'] }) => {
-  const [viewMode, setViewMode] = useState<'groups' | 'students'>('groups');
-  const sortedGroups = [...state.groups].sort((a, b) => b.totalPoints - a.totalPoints);
-  
-  // LOGIC FOR STUDENT SYNTHESIS
-  const calculateStudentStats = (studentName: string) => {
+// --- STUDENT STATS DETAIL COMPONENT ---
+
+const StudentDetailRow = ({ 
+  stats, 
+  studentName 
+}: { 
+  stats: ReturnType<typeof calculateStudentStats>, 
+  studentName: string 
+}) => {
+  return (
+    <div className="bg-slate-50 p-4 border-t border-slate-200">
+       <h4 className="font-bold text-slate-700 mb-3 flex items-center gap-2">
+         <BarChart3 size={16} /> Détail par balise pour {studentName}
+       </h4>
+       
+       {Object.keys(stats.beaconStats).length === 0 ? (
+         <p className="text-sm text-slate-400 italic">Aucune donnée détaillée disponible.</p>
+       ) : (
+         <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 gap-3">
+           {Object.values(stats.beaconStats).sort((a,b) => a.code.localeCompare(b.code, undefined, {numeric: true})).map((bs) => (
+             <div key={bs.code} className="bg-white p-2 rounded-lg border border-slate-200 text-sm shadow-sm">
+                <div className="flex justify-between items-start mb-1">
+                  <span className={clsx(
+                    "font-bold px-1.5 rounded text-xs",
+                    bs.level === 'N1' ? "bg-green-100 text-green-700" :
+                    bs.level === 'N2' ? "bg-yellow-100 text-yellow-700" : "bg-red-100 text-red-700"
+                  )}>
+                    Balise {bs.code}
+                  </span>
+                  <span className="text-xs text-slate-400">
+                    {bs.success} / {bs.attempts} réussi(s)
+                  </span>
+                </div>
+                
+                <div className="flex justify-between items-center text-xs mt-2">
+                   <div className="text-slate-500">Erreurs: <strong className="text-red-600">{bs.attempts - bs.success}</strong></div>
+                   {bs.countForTime > 0 && (
+                     <div className="flex items-center gap-1 text-slate-600" title="Temps moyen estimé">
+                       <Clock size={10} />
+                       {Math.round(bs.totalTime / bs.countForTime)}s
+                     </div>
+                   )}
+                </div>
+             </div>
+           ))}
+         </div>
+       )}
+    </div>
+  );
+};
+
+// Helper function definition moved outside component to avoid recreation but needs state access, 
+// so kept inside Dashboard or passed as prop. Here defined inside for closure access.
+interface BeaconStat {
+  code: string;
+  level: string;
+  attempts: number;
+  success: number;
+  totalTime: number; // accumulated average time
+  countForTime: number; // number of runs contributing to totalTime
+}
+
+const calculateStudentStats = (
+  studentName: string, 
+  state: ReturnType<typeof useOrientation>['state']
+) => {
     // 1. Find all group IDs the student belongs to
     const studentGroupIds = state.groups
       .filter(g => g.members.includes(studentName))
@@ -492,21 +567,49 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
       N2: { attempts: 0, found: 0 },
       N3: { attempts: 0, found: 0 },
     };
+    
+    // Detailed stats per beacon
+    const beaconStats: Record<string, BeaconStat> = {};
 
     studentRuns.forEach(run => {
       const isSuccess = run.status === 'completed';
       const runBeacons = state.beacons.filter(b => run.beaconIds.includes(b.id));
 
+      let timePerBeacon = 0;
       if (run.startTime && run.endTime) {
-        totalTime += (run.endTime - run.startTime) / 1000; // in seconds
+        const duration = (run.endTime - run.startTime) / 1000;
+        totalTime += duration;
+        // Estimate time per beacon simply by dividing run duration by beacon count
+        if (runBeacons.length > 0) {
+           timePerBeacon = duration / runBeacons.length;
+        }
       }
 
       runBeacons.forEach(b => {
+        // Init stats for this beacon if needed
+        if (!beaconStats[b.id]) {
+          beaconStats[b.id] = { 
+            code: b.code, 
+            level: b.level, 
+            attempts: 0, 
+            success: 0, 
+            totalTime: 0, 
+            countForTime: 0 
+          };
+        }
+
+        // Update stats
+        beaconStats[b.id].attempts += 1;
         if (b.level) {
             stats[b.level].attempts += 1;
             if (isSuccess) {
                 stats[b.level].found += 1;
                 totalPoints += b.points;
+                
+                // Update detailed beacon stats
+                beaconStats[b.id].success += 1;
+                beaconStats[b.id].totalTime += timePerBeacon;
+                beaconStats[b.id].countForTime += 1;
             }
         }
       });
@@ -519,8 +622,20 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
       totalPoints,
       avgTimePerBeacon,
       stats,
+      beaconStats,
       totalRuns: studentRuns.length
     };
+};
+
+const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'] }) => {
+  const [viewMode, setViewMode] = useState<'groups' | 'students'>('groups');
+  const [expandedStudent, setExpandedStudent] = useState<string | null>(null);
+  
+  const sortedGroups = [...state.groups].sort((a, b) => b.totalPoints - a.totalPoints);
+  
+  const toggleStudent = (name: string) => {
+    if (expandedStudent === name) setExpandedStudent(null);
+    else setExpandedStudent(name);
   };
 
   return (
@@ -627,59 +742,79 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                    <th className="px-6 py-3 text-center text-yellow-700">N2 (Réussis/Total)</th>
                    <th className="px-6 py-3 text-center text-red-700">N3 (Réussis/Total)</th>
                    <th className="px-6 py-3 text-center">Temps Moyen / Balise</th>
+                   <th className="px-6 py-3 text-center">Détail</th>
                  </tr>
                </thead>
                <tbody>
                  {state.classes.map(cls => (
                     cls.students.length > 0 ? (
                       cls.students.map((student, sIdx) => {
-                        const stats = calculateStudentStats(student);
+                        const stats = calculateStudentStats(student, state);
+                        const isExpanded = expandedStudent === student;
+                        
                         return (
-                          <tr key={`${cls.id}-${sIdx}`} className="bg-white border-b hover:bg-slate-50">
-                            <td className="px-6 py-4 font-medium text-slate-900">
-                              <div className="font-bold">{student}</div>
-                              <div className="text-xs text-slate-500">{cls.name}</div>
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="font-bold">{stats.totalRuns}</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                              {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="text-blue-600 font-bold">{stats.totalPoints} pts</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                               {stats.stats.N1.attempts > 0 ? (
-                                  <span className={stats.stats.N1.found === stats.stats.N1.attempts ? "text-green-600 font-bold" : "text-slate-600"}>
-                                    {stats.stats.N1.found} / {stats.stats.N1.attempts}
-                                  </span>
-                               ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                               {stats.stats.N2.attempts > 0 ? (
-                                  <span className={stats.stats.N2.found === stats.stats.N2.attempts ? "text-yellow-600 font-bold" : "text-slate-600"}>
-                                    {stats.stats.N2.found} / {stats.stats.N2.attempts}
-                                  </span>
-                               ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center">
-                               {stats.stats.N3.attempts > 0 ? (
-                                  <span className={stats.stats.N3.found === stats.stats.N3.attempts ? "text-red-600 font-bold" : "text-slate-600"}>
-                                    {stats.stats.N3.found} / {stats.stats.N3.attempts}
-                                  </span>
-                               ) : <span className="text-slate-300">-</span>}
-                            </td>
-                            <td className="px-6 py-4 text-center font-mono">
-                               {stats.avgTimePerBeacon > 0 ? (
-                                 <span>{Math.floor(stats.avgTimePerBeacon / 60)}m {stats.avgTimePerBeacon % 60}s</span>
-                               ) : <span className="text-slate-300">-</span>}
-                            </td>
-                          </tr>
+                          <React.Fragment key={`${cls.id}-${sIdx}`}>
+                            <tr className={clsx("border-b hover:bg-slate-50 transition-colors", isExpanded ? "bg-slate-50" : "bg-white")}>
+                              <td className="px-6 py-4 font-medium text-slate-900">
+                                <div className="font-bold">{student}</div>
+                                <div className="text-xs text-slate-500">{cls.name}</div>
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="font-bold">{stats.totalRuns}</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="text-blue-600 font-bold">{stats.totalPoints} pts</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {stats.stats.N1.attempts > 0 ? (
+                                    <span className={stats.stats.N1.found === stats.stats.N1.attempts ? "text-green-600 font-bold" : "text-slate-600"}>
+                                      {stats.stats.N1.found} / {stats.stats.N1.attempts}
+                                    </span>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {stats.stats.N2.attempts > 0 ? (
+                                    <span className={stats.stats.N2.found === stats.stats.N2.attempts ? "text-yellow-600 font-bold" : "text-slate-600"}>
+                                      {stats.stats.N2.found} / {stats.stats.N2.attempts}
+                                    </span>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                {stats.stats.N3.attempts > 0 ? (
+                                    <span className={stats.stats.N3.found === stats.stats.N3.attempts ? "text-red-600 font-bold" : "text-slate-600"}>
+                                      {stats.stats.N3.found} / {stats.stats.N3.attempts}
+                                    </span>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center font-mono">
+                                {stats.avgTimePerBeacon > 0 ? (
+                                  <span>{Math.floor(stats.avgTimePerBeacon / 60)}m {Math.floor(stats.avgTimePerBeacon % 60).toString().padStart(2, '0')}s</span>
+                                ) : <span className="text-slate-300">-</span>}
+                              </td>
+                              <td className="px-6 py-4 text-center">
+                                <button 
+                                  onClick={() => toggleStudent(student)}
+                                  className="text-slate-400 hover:text-blue-600 transition-colors p-1"
+                                >
+                                  {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                                </button>
+                              </td>
+                            </tr>
+                            {isExpanded && (
+                              <tr>
+                                <td colSpan={8} className="p-0">
+                                   <StudentDetailRow stats={stats} studentName={student} />
+                                </td>
+                              </tr>
+                            )}
+                          </React.Fragment>
                         );
                       })
                     ) : null
                  ))}
                  {state.classes.length === 0 && (
                    <tr>
-                     <td colSpan={7} className="text-center py-8 text-slate-400 italic">
+                     <td colSpan={8} className="text-center py-8 text-slate-400 italic">
                         Ajoutez des classes et des élèves pour voir les statistiques.
                      </td>
                    </tr>
@@ -713,6 +848,10 @@ const AdminPanel = ({
   // State pour la création de groupe
   const [selectedStudentsForGroup, setSelectedStudentsForGroup] = useState<string[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
+
+  // State pour les groupes automatiques (Counters)
+  const [groupAssignments, setGroupAssignments] = useState<Record<string, number>>({});
+  const [autoGroupSize, setAutoGroupSize] = useState(2);
 
   // State pour les balises
   const [beaconCode, setBeaconCode] = useState('');
@@ -761,6 +900,63 @@ const AdminPanel = ({
       actions.addGroup(newGroupName, selectedStudentsForGroup);
       setNewGroupName('');
       setSelectedStudentsForGroup([]);
+    }
+  };
+
+  // -- AUTO GROUP HANDLERS --
+
+  const handleAutoAssign = () => {
+    if (!selectedClass) return;
+    const newAssignments: Record<string, number> = {};
+    let currentGroup = 1;
+    let count = 0;
+    
+    selectedClass.students.forEach(student => {
+      newAssignments[student] = currentGroup;
+      count++;
+      if (count >= autoGroupSize) {
+        count = 0;
+        currentGroup++;
+      }
+    });
+    setGroupAssignments(newAssignments);
+  };
+
+  const handleResetAssignments = () => {
+    setGroupAssignments({});
+  };
+
+  const handleBulkCreateGroups = () => {
+    if (Object.keys(groupAssignments).length === 0) return;
+
+    // Regrouper par numéro de groupe
+    const groupsToCreate: Record<number, string[]> = {};
+    Object.entries(groupAssignments).forEach(([student, groupNum]) => {
+       if (groupNum > 0) {
+         if (!groupsToCreate[groupNum]) groupsToCreate[groupNum] = [];
+         groupsToCreate[groupNum].push(student);
+       }
+    });
+
+    // Créer les groupes
+    Object.entries(groupsToCreate).forEach(([groupNum, members]) => {
+      actions.addGroup(`Groupe ${groupNum}`, members);
+    });
+
+    // Reset
+    setGroupAssignments({});
+    alert(`${Object.keys(groupsToCreate).length} groupes ont été créés !`);
+  };
+
+  const updateStudentGroup = (student: string, val: string) => {
+    const num = parseInt(val);
+    if (!isNaN(num)) {
+       setGroupAssignments(prev => ({...prev, [student]: num}));
+    } else {
+       // Allow clearing
+       const newAss = {...groupAssignments};
+       delete newAss[student];
+       setGroupAssignments(newAss);
     }
   };
 
@@ -853,6 +1049,7 @@ const AdminPanel = ({
                     onClick={() => {
                       setSelectedClassId(c.id);
                       setSelectedStudentsForGroup([]);
+                      setGroupAssignments({});
                       setShowCsvImport(false); // Close importer if selecting a class
                     }}
                     className={clsx(
@@ -949,22 +1146,66 @@ const AdminPanel = ({
 
                   {/* Liste des élèves & Création de groupe */}
                   <div className="border-t pt-4 mt-4">
+                     {/* Toolbar Auto-Group */}
+                     <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg mb-4 flex flex-wrap items-center gap-3">
+                        <div className="flex items-center gap-2">
+                           <Wand2 size={16} className="text-blue-600" />
+                           <span className="text-sm font-medium text-slate-700">Groupe Rapide:</span>
+                           <select 
+                             value={autoGroupSize}
+                             onChange={(e) => setAutoGroupSize(Number(e.target.value))}
+                             className="text-sm border border-slate-300 rounded p-1"
+                           >
+                             <option value={2}>Par 2</option>
+                             <option value={3}>Par 3</option>
+                             <option value={4}>Par 4</option>
+                             <option value={5}>Par 5</option>
+                           </select>
+                           <button 
+                             onClick={handleAutoAssign}
+                             className="bg-blue-600 text-white text-xs px-3 py-1.5 rounded font-bold hover:bg-blue-700"
+                           >
+                             Distribuer
+                           </button>
+                        </div>
+                        <div className="h-6 w-px bg-blue-200 mx-1 hidden sm:block"></div>
+                        <div className="flex items-center gap-2">
+                           <button 
+                              onClick={handleBulkCreateGroups}
+                              disabled={Object.keys(groupAssignments).length === 0}
+                              className="bg-green-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded font-bold hover:bg-green-700 flex items-center gap-1"
+                           >
+                             <Layers size={14} /> Valider et créer {Object.values(groupAssignments).reduce((max, curr) => Math.max(max, curr), 0)} groupes
+                           </button>
+                           {Object.keys(groupAssignments).length > 0 && (
+                             <button 
+                               onClick={handleResetAssignments}
+                               className="text-slate-400 hover:text-red-500"
+                               title="Effacer les compteurs"
+                             >
+                               <Eraser size={16} />
+                             </button>
+                           )}
+                        </div>
+                     </div>
+
                      <div className="flex justify-between items-end mb-3">
                         <h4 className="font-medium text-slate-700">Liste des élèves ({selectedClass.students.length})</h4>
+                        {/* OLD MANUAL GROUP CREATION - KEPT AS REQUESTED */}
                         {selectedStudentsForGroup.length > 0 && (
-                          <div className="flex items-center gap-2 bg-blue-50 p-2 rounded-lg border border-blue-100 animate-in fade-in slide-in-from-bottom-2">
+                          <div className="flex items-center gap-2 bg-yellow-50 p-2 rounded-lg border border-yellow-100 animate-in fade-in slide-in-from-bottom-2">
                             <input 
-                              placeholder="Nom du groupe (ex: Groupe 1)" 
-                              className="text-sm p-1.5 rounded border border-blue-200 outline-none w-48"
+                              placeholder="Nom du groupe manuel" 
+                              className="text-sm p-1.5 rounded border border-yellow-200 outline-none w-48"
                               value={newGroupName}
                               onChange={e => setNewGroupName(e.target.value)}
                             />
                             <button 
                               onClick={handleCreateGroupFromSelection}
                               disabled={!newGroupName}
-                              className="text-xs bg-blue-600 text-white px-3 py-1.5 rounded font-bold hover:bg-blue-700 disabled:opacity-50"
+                              className="text-xs bg-yellow-600 text-white px-3 py-1.5 rounded font-bold hover:bg-yellow-700 disabled:opacity-50"
                             >
-                              Créer le groupe ({selectedStudentsForGroup.length})
+                              Créer ({selectedStudentsForGroup.length})
                             </button>
                           </div>
                         )}
@@ -975,23 +1216,35 @@ const AdminPanel = ({
                      ) : (
                        <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
                          {selectedClass.students.map((student, idx) => (
-                           <button
+                           <div 
                              key={idx}
                              onClick={() => toggleStudentSelection(student)}
                              className={clsx(
-                               "text-sm p-2 rounded-lg border text-left transition-all",
+                               "relative text-sm p-2 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between gap-2 group",
                                selectedStudentsForGroup.includes(student)
-                                ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105"
+                                ? "bg-yellow-100 border-yellow-400 text-yellow-900"
                                 : "bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300"
                              )}
                            >
-                             {student}
-                           </button>
+                             <span className="truncate">{student}</span>
+                             <input 
+                               type="number" 
+                               min="1"
+                               className={clsx(
+                                 "w-10 h-6 text-center text-xs border rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none",
+                                 groupAssignments[student] ? "border-blue-500 font-bold text-blue-600" : "border-slate-200 text-slate-400"
+                               )}
+                               placeholder="#"
+                               value={groupAssignments[student] || ''}
+                               onClick={(e) => e.stopPropagation()} // Prevent selection toggle when clicking input
+                               onChange={(e) => updateStudentGroup(student, e.target.value)}
+                             />
+                           </div>
                          ))}
                        </div>
                      )}
                      <p className="text-xs text-slate-400 mt-2 text-right">
-                       Sélectionnez plusieurs élèves pour créer un groupe rapidement.
+                       Utilisez les compteurs pour les groupes rapides, ou cliquez sur les noms pour la création manuelle.
                      </p>
                   </div>
                 </div>
