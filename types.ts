@@ -7,6 +7,7 @@ export interface Beacon {
   code: string;
   level: Level;
   points: number;
+  punchCode: string; // Nouveau champ pour le poinçon (ex: "A", ".:.", etc.)
 }
 
 export interface ClassRoom {

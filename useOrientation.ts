@@ -19,11 +19,11 @@ const generateId = () => {
 // État initial par défaut
 const INITIAL_STATE: GameState = {
   beacons: [
-    { id: 'b1', code: '31', level: 'N1', points: 10 },
-    { id: 'b2', code: '32', level: 'N1', points: 10 },
-    { id: 'b3', code: '45', level: 'N2', points: 20 },
-    { id: 'b4', code: '46', level: 'N2', points: 20 },
-    { id: 'b5', code: '60', level: 'N3', points: 30 },
+    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: 'A' },
+    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: 'B' },
+    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: 'C' },
+    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: 'D' },
+    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: 'E' },
   ],
   classes: [], // Nouvelle liste de classes vide par défaut
   groups: [],
@@ -56,6 +56,11 @@ export const useOrientation = () => {
             const data = docSnap.data() as GameState;
             // Migration douce : si 'classes' n'existe pas dans la DB existante, on met un tableau vide
             if (!data.classes) data.classes = [];
+            // Migration douce : ajout punchCode par défaut si absent
+            data.beacons = data.beacons.map(b => ({
+                ...b,
+                punchCode: b.punchCode || '?'
+            }));
             setState(data);
             setIsOfflineMode(false);
           } else {
@@ -218,14 +223,23 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
-  const addBeacon = (code: string, level: Level, points: number) => {
+  const addBeacon = (code: string, level: Level, points: number, punchCode: string) => {
     const newBeacon: Beacon = {
       id: generateId(),
       code,
       level,
-      points
+      points,
+      punchCode
     };
     const newState = { ...state, beacons: [...state.beacons, newBeacon] };
+    syncState(newState);
+  };
+
+  const updateBeacon = (id: string, code: string, level: Level, points: number, punchCode: string) => {
+    const updatedBeacons = state.beacons.map(b => 
+      b.id === id ? { ...b, code, level, points, punchCode } : b
+    );
+    const newState = { ...state, beacons: updatedBeacons };
     syncState(newState);
   };
 
@@ -248,6 +262,7 @@ export const useOrientation = () => {
       startRun,
       completeRun,
       addBeacon,
+      updateBeacon,
       removeBeacon
     }
   };

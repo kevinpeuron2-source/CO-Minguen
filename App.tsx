@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOrientation, getTimeLimit } from './useOrientation';
-import { ActiveRun } from './types';
+import { ActiveRun, Beacon } from './types';
 import { 
   Users, 
   Flag, 
@@ -16,7 +16,10 @@ import {
   UserPlus,
   FileSpreadsheet,
   Upload,
-  ArrowRight
+  ArrowRight,
+  Pencil,
+  Save,
+  Stamp
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -477,7 +480,7 @@ const AdminPanel = ({
   // CSV Import State
   const [showCsvImport, setShowCsvImport] = useState(false);
 
-  // State pour les formulaires
+  // State pour les formulaires classes
   const [newClass, setNewClass] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [studentsInput, setStudentsInput] = useState('');
@@ -486,8 +489,11 @@ const AdminPanel = ({
   const [selectedStudentsForGroup, setSelectedStudentsForGroup] = useState<string[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
 
+  // State pour les balises
   const [beaconCode, setBeaconCode] = useState('');
   const [beaconLevel, setBeaconLevel] = useState('N1');
+  const [beaconPunch, setBeaconPunch] = useState('');
+  const [editingBeaconId, setEditingBeaconId] = useState<string | null>(null);
 
   // -- CLASSES HANDLERS --
   const handleAddClass = (e: React.FormEvent) => {
@@ -528,13 +534,37 @@ const AdminPanel = ({
   };
 
   // -- BEACONS HANDLERS --
-  const handleAddBeacon = (e: React.FormEvent) => {
+  const handleBeaconSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if(beaconCode) {
+    if(beaconCode && beaconPunch) {
       const points = beaconLevel === 'N1' ? 10 : beaconLevel === 'N2' ? 20 : 30;
-      actions.addBeacon(beaconCode, beaconLevel as any, points);
+      
+      if (editingBeaconId) {
+        actions.updateBeacon(editingBeaconId, beaconCode, beaconLevel as any, points, beaconPunch);
+        setEditingBeaconId(null);
+      } else {
+        actions.addBeacon(beaconCode, beaconLevel as any, points, beaconPunch);
+      }
+      
+      // Reset form
       setBeaconCode('');
+      setBeaconLevel('N1');
+      setBeaconPunch('');
     }
+  };
+
+  const handleEditBeacon = (b: Beacon) => {
+    setEditingBeaconId(b.id);
+    setBeaconCode(b.code);
+    setBeaconLevel(b.level);
+    setBeaconPunch(b.punchCode || '');
+  };
+
+  const handleCancelEdit = () => {
+    setEditingBeaconId(null);
+    setBeaconCode('');
+    setBeaconLevel('N1');
+    setBeaconPunch('');
   };
 
   const selectedClass = state.classes.find(c => c.id === selectedClassId);
@@ -750,22 +780,27 @@ const AdminPanel = ({
       {adminTab === 'beacons' && (
         <div className="grid md:grid-cols-2 gap-8">
            <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-            <h3 className="font-bold text-lg mb-4 flex items-center gap-2"><Flag size={20} /> Ajouter une balise</h3>
-            <form onSubmit={handleAddBeacon} className="space-y-4">
+            <h3 className="font-bold text-lg mb-4 flex items-center gap-2">
+              <Flag size={20} className={editingBeaconId ? "text-orange-500" : "text-slate-800"} /> 
+              {editingBeaconId ? "Modifier la balise" : "Ajouter une balise"}
+            </h3>
+            
+            <form onSubmit={handleBeaconSubmit} className="space-y-4">
               <div className="flex gap-4">
                 <div className="flex-1">
-                  <label className="block text-sm font-medium mb-1">Numéro</label>
+                  <label className="block text-sm font-medium mb-1 text-slate-600">Numéro</label>
                   <input 
-                    className="w-full p-2 border rounded-lg" 
+                    className="w-full p-2 border rounded-lg bg-slate-50 focus:bg-white transition-colors" 
                     value={beaconCode} 
                     onChange={e => setBeaconCode(e.target.value)} 
-                    placeholder="42"
+                    placeholder="Ex: 42"
+                    required
                   />
                 </div>
                 <div className="w-1/3">
-                  <label className="block text-sm font-medium mb-1">Niveau</label>
+                  <label className="block text-sm font-medium mb-1 text-slate-600">Niveau</label>
                   <select 
-                    className="w-full p-2 border rounded-lg" 
+                    className="w-full p-2 border rounded-lg bg-slate-50 focus:bg-white" 
                     value={beaconLevel} 
                     onChange={e => setBeaconLevel(e.target.value)}
                   >
@@ -775,35 +810,92 @@ const AdminPanel = ({
                   </select>
                 </div>
               </div>
-              <button className="w-full bg-slate-800 text-white py-2 rounded-lg font-medium hover:bg-slate-900">
-                Ajouter la balise
-              </button>
+              
+              <div>
+                 <label className="block text-sm font-medium mb-1 text-slate-600">Code Poinçon</label>
+                 <div className="relative">
+                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
+                     <Stamp size={16} className="text-slate-400" />
+                   </div>
+                   <input 
+                      className="w-full pl-10 p-2 border rounded-lg bg-slate-50 focus:bg-white transition-colors" 
+                      value={beaconPunch} 
+                      onChange={e => setBeaconPunch(e.target.value)} 
+                      placeholder="Ex: A, B, 12..."
+                      required
+                   />
+                 </div>
+                 <p className="text-xs text-slate-400 mt-1">Le code visible sur la pince ou le boîtier.</p>
+              </div>
+
+              <div className="flex gap-2 pt-2">
+                {editingBeaconId && (
+                  <button 
+                    type="button" 
+                    onClick={handleCancelEdit}
+                    className="flex-1 bg-slate-100 text-slate-600 py-2 rounded-lg font-medium hover:bg-slate-200"
+                  >
+                    Annuler
+                  </button>
+                )}
+                <button 
+                  type="submit"
+                  className={clsx(
+                    "flex-1 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2",
+                    editingBeaconId ? "bg-orange-500 hover:bg-orange-600" : "bg-slate-800 hover:bg-slate-900"
+                  )}
+                >
+                  {editingBeaconId ? <><Save size={18} /> Mettre à jour</> : <><Plus size={18} /> Ajouter</>}
+                </button>
+              </div>
             </form>
           </div>
 
           <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-            <h4 className="font-bold text-lg mb-4 text-slate-800">Balises existantes</h4>
-            <div className="flex flex-wrap gap-2 max-h-[400px] overflow-y-auto content-start">
+            <h4 className="font-bold text-lg mb-4 text-slate-800">Balises existantes ({state.beacons.length})</h4>
+            <div className="grid grid-cols-1 gap-2 max-h-[500px] overflow-y-auto content-start pr-1">
               {state.beacons.map(b => (
-                <div key={b.id} className="relative group">
-                  <span className="bg-slate-50 border px-3 py-1.5 rounded text-sm font-mono font-bold flex items-center gap-2">
-                    {b.code} 
+                <div key={b.id} className={clsx(
+                  "flex items-center justify-between p-3 rounded-lg border transition-all",
+                  editingBeaconId === b.id ? "bg-orange-50 border-orange-200 ring-1 ring-orange-200" : "bg-white border-slate-100 hover:border-blue-200"
+                )}>
+                  <div className="flex items-center gap-3">
                     <span className={clsx(
-                      "text-[10px] px-1 rounded border",
-                      b.level === 'N1' ? "text-green-600 border-green-200 bg-green-50" :
-                      b.level === 'N2' ? "text-yellow-600 border-yellow-200 bg-yellow-50" :
-                      "text-red-600 border-red-200 bg-red-50"
-                    )}>{b.level}</span>
-                  </span>
-                  <button 
-                    onClick={() => actions.removeBeacon(b.id)}
-                    className="absolute -top-2 -right-2 bg-red-500 text-white rounded-full p-0.5 opacity-0 group-hover:opacity-100 transition-opacity shadow-sm"
-                  >
-                    <XCircle size={12} fill="white" className="text-red-500" />
-                  </button>
+                      "w-10 h-10 rounded-full flex items-center justify-center font-bold text-lg border",
+                      b.level === 'N1' ? "bg-green-50 text-green-700 border-green-200" :
+                      b.level === 'N2' ? "bg-yellow-50 text-yellow-700 border-yellow-200" :
+                      "bg-red-50 text-red-700 border-red-200"
+                    )}>
+                      {b.code}
+                    </span>
+                    <div>
+                       <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{b.level}</div>
+                       <div className="text-sm font-medium text-slate-700 flex items-center gap-1">
+                         <Stamp size={12} className="text-slate-400" /> 
+                         Poinçon: <span className="font-bold text-slate-900">{b.punchCode || '?'}</span>
+                       </div>
+                    </div>
+                  </div>
+                  
+                  <div className="flex gap-1">
+                    <button 
+                      onClick={() => handleEditBeacon(b)}
+                      className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
+                      title="Modifier"
+                    >
+                      <Pencil size={16} />
+                    </button>
+                    <button 
+                      onClick={() => actions.removeBeacon(b.id)}
+                      className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
+                      title="Supprimer"
+                    >
+                      <Trash2 size={16} />
+                    </button>
+                  </div>
                 </div>
               ))}
-              {state.beacons.length === 0 && <p className="text-slate-400 italic">Aucune balise configurée.</p>}
+              {state.beacons.length === 0 && <p className="text-slate-400 italic text-center py-8">Aucune balise configurée.</p>}
             </div>
           </div>
         </div>
