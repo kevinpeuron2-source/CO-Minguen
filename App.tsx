@@ -143,6 +143,8 @@ const App: React.FC = () => {
                  onAddEmptyGroup={actions.addEmptyGroup}
                  onRemoveGroup={actions.removeGroup}
                  onMoveStudent={actions.moveStudentToGroup}
+                 onMoveStudents={actions.moveStudentsToGroup}
+                 onCreateGroupWithStudents={actions.createGroupWithStudents}
               />
            </div>
         )}
@@ -188,4 +190,52 @@ const App: React.FC = () => {
           
           <button 
             onClick={() => setCurrentTab('stats')}
-            className={`flex flex-col items-center justify-center w-full h-full ${currentTab === 'stats' ? 'text-blue-600' : 'text-slate-400 hover:text-
+            className={`flex flex-col items-center justify-center w-full h-full ${currentTab === 'stats' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <BarChart3 className="w-6 h-6 mb-1" />
+            <span className="text-[10px] font-medium uppercase tracking-wide">Stats</span>
+          </button>
+          
+          <button 
+            onClick={() => setCurrentTab('admin')}
+            className={`flex flex-col items-center justify-center w-full h-full ${currentTab === 'admin' ? 'text-blue-600' : 'text-slate-400 hover:text-slate-600'}`}
+          >
+            <Settings className="w-6 h-6 mb-1" />
+            <span className="text-[10px] font-medium uppercase tracking-wide">Admin</span>
+          </button>
+        </div>
+      </div>
+
+      {/* Desktop Floating Navigation (Bottom Right) */}
+      <div className="hidden md:flex fixed bottom-8 right-8 bg-white shadow-lg rounded-full border border-slate-200 p-1.5 gap-1 z-50">
+         <button 
+            onClick={() => setCurrentTab('race')}
+            className={`px-4 py-2 rounded-full font-medium transition-all ${currentTab === 'race' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Course
+          </button>
+          <button 
+            onClick={() => setCurrentTab('students')}
+            className={`px-4 py-2 rounded-full font-medium transition-all ${currentTab === 'students' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Élèves
+          </button>
+          <button 
+            onClick={() => setCurrentTab('stats')}
+            className={`px-4 py-2 rounded-full font-medium transition-all ${currentTab === 'stats' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Stats
+          </button>
+          <button 
+            onClick={() => setCurrentTab('admin')}
+            className={`px-4 py-2 rounded-full font-medium transition-all ${currentTab === 'admin' ? 'bg-slate-900 text-white' : 'text-slate-600 hover:bg-slate-100'}`}
+          >
+            Admin
+          </button>
+      </div>
+
+    </div>
+  );
+};
+
+export default App;

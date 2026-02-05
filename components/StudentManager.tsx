@@ -1,5 +1,5 @@
 import React, { useState, useMemo } from 'react';
-import { Users, UserPlus, Shuffle, Save, FolderOpen, Trash2, Plus, UserMinus, ArrowRightLeft } from 'lucide-react';
+import { Users, UserPlus, Shuffle, Save, FolderOpen, Trash2, Plus, UserMinus, ArrowRightLeft, CheckSquare, X, Users as UsersIcon } from 'lucide-react';
 import { Student, Group, ClassRoom } from '../types';
 
 interface StudentManagerProps {
@@ -16,6 +16,8 @@ interface StudentManagerProps {
   onAddEmptyGroup?: () => void;
   onRemoveGroup?: (id: string) => void;
   onMoveStudent?: (studentId: string, targetGroupId: string | null) => void;
+  onMoveStudents?: (studentIds: string[], targetGroupId: string | null) => void;
+  onCreateGroupWithStudents?: (studentIds: string[]) => void;
 }
 
 export const StudentManager: React.FC<StudentManagerProps> = ({ 
@@ -30,11 +32,14 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
   onDeleteClass,
   onAddEmptyGroup,
   onRemoveGroup,
-  onMoveStudent
+  onMoveStudent,
+  onMoveStudents,
+  onCreateGroupWithStudents
 }) => {
   const [inputText, setInputText] = useState('');
   const [groupConfig, setGroupConfig] = useState({ count: 4, method: 'size' as 'count' | 'size' });
   const [classNameToSave, setClassNameToSave] = useState('');
+  const [selectedStudentIds, setSelectedStudentIds] = useState<Set<string>>(new Set());
 
   // Calculate unassigned students
   const unassignedStudents = useMemo(() => {
@@ -49,6 +54,7 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
 
   const handleCreateGroups = () => {
     onCreateGroups(groupConfig.count, groupConfig.method);
+    setSelectedStudentIds(new Set()); // Clear selection on re-gen
   };
 
   const handleSaveClass = (e: React.FormEvent) => {
@@ -59,8 +65,41 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
     }
   };
 
+  const toggleSelection = (id: string) => {
+    const newSet = new Set(selectedStudentIds);
+    if (newSet.has(id)) newSet.delete(id);
+    else newSet.add(id);
+    setSelectedStudentIds(newSet);
+  };
+
+  const toggleSelectAllUnassigned = () => {
+    const newSet = new Set(selectedStudentIds);
+    const allUnassignedSelected = unassignedStudents.every(s => newSet.has(s.id));
+    
+    if (allUnassignedSelected) {
+      unassignedStudents.forEach(s => newSet.delete(s.id));
+    } else {
+      unassignedStudents.forEach(s => newSet.add(s.id));
+    }
+    setSelectedStudentIds(newSet);
+  };
+
+  const handleBulkMove = (targetGroupId: string | null) => {
+    if (onMoveStudents) {
+      onMoveStudents(Array.from(selectedStudentIds), targetGroupId);
+      setSelectedStudentIds(new Set());
+    }
+  };
+
+  const handleBulkCreateGroup = () => {
+    if (onCreateGroupWithStudents) {
+      onCreateGroupWithStudents(Array.from(selectedStudentIds));
+      setSelectedStudentIds(new Set());
+    }
+  };
+
   return (
-    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
+    <div className="space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500 pb-20">
       
       {/* Saved Classes Section */}
       <div className="bg-white border border-slate-200 rounded-xl p-6 shadow-sm">
@@ -216,40 +255,32 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
               )}
            </div>
            
-           <div className="flex flex-col lg:flex-row gap-6">
+           <div className="flex flex-col lg:flex-row gap-6 relative">
               
               {/* Unassigned Students Column */}
               <div className="w-full lg:w-1/4 flex flex-col gap-3">
-                 <div className="bg-slate-100 p-4 rounded-xl border border-slate-200">
-                    <div className="flex justify-between items-center mb-3">
-                       <h4 className="font-bold text-slate-700 text-sm uppercase">Sans Groupe</h4>
-                       <span className="bg-white px-2 py-0.5 rounded text-xs font-bold border border-slate-200">{unassignedStudents.length}</span>
+                 <div className="bg-slate-100 p-4 rounded-xl border border-slate-200 shadow-inner">
+                    <div className="flex justify-between items-center mb-3 pb-2 border-b border-slate-200">
+                       <div className="flex items-center gap-2">
+                         <h4 className="font-bold text-slate-700 text-sm uppercase">Sans Groupe</h4>
+                         <span className="bg-white px-2 py-0.5 rounded text-xs font-bold border border-slate-200">{unassignedStudents.length}</span>
+                       </div>
+                       <button onClick={toggleSelectAllUnassigned} className="text-xs text-blue-600 font-medium hover:underline">
+                          Tout
+                       </button>
                     </div>
-                    <div className="space-y-2 max-h-[600px] overflow-y-auto">
+                    <div className="space-y-2 max-h-[600px] overflow-y-auto pr-1">
                        {unassignedStudents.map(student => (
-                         <div key={student.id} className="bg-white p-2 rounded-lg border border-slate-200 shadow-sm flex items-center justify-between gap-2">
-                            <span className="text-sm font-medium truncate flex-1">{student.name}</span>
-                            {onMoveStudent && (
-                              <select 
-                                className="w-6 h-6 opacity-50 hover:opacity-100 cursor-pointer text-transparent bg-transparent absolute right-4" 
-                                style={{backgroundImage: 'none'}}
-                                onChange={(e) => {
-                                  if (e.target.value) onMoveStudent(student.id, e.target.value);
-                                }}
-                                value=""
-                              >
-                                <option value="" disabled>Déplacer...</option>
-                                {groups.map(g => (
-                                  <option key={g.id} value={g.id}>{g.name}</option>
-                                ))}
-                              </select>
-                            )}
-                            {/* Visual Fake Button for UI */}
-                            {onMoveStudent && (
-                               <div className="pointer-events-none text-slate-400">
-                                  <ArrowRightLeft className="w-4 h-4" />
-                               </div>
-                            )}
+                         <div key={student.id} className={`bg-white p-2 rounded-lg border flex items-center justify-between gap-2 transition ${selectedStudentIds.has(student.id) ? 'border-blue-400 bg-blue-50 ring-1 ring-blue-200' : 'border-slate-200 hover:border-slate-300'}`}>
+                            <div className="flex items-center gap-3 flex-1 overflow-hidden">
+                               <input 
+                                 type="checkbox" 
+                                 className="w-4 h-4 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                                 checked={selectedStudentIds.has(student.id)}
+                                 onChange={() => toggleSelection(student.id)}
+                               />
+                               <span className="text-sm font-medium truncate cursor-pointer" onClick={() => toggleSelection(student.id)}>{student.name}</span>
+                            </div>
                          </div>
                        ))}
                        {unassignedStudents.length === 0 && (
@@ -285,10 +316,15 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
                          {group.studentIds.map(sid => {
                            const student = students.find(s => s.id === sid);
                            return student ? (
-                             <li key={sid} className="flex items-center justify-between group/item bg-white px-2 py-1 rounded border border-slate-100">
-                               <div className="flex items-center gap-2 truncate">
-                                 <div className="w-1.5 h-1.5 rounded-full bg-slate-400 shrink-0"></div>
-                                 <span className="truncate">{student.name}</span>
+                             <li key={sid} className={`flex items-center justify-between group/item px-2 py-1.5 rounded border transition ${selectedStudentIds.has(student.id) ? 'bg-blue-50 border-blue-200' : 'bg-white border-slate-100'}`}>
+                               <div className="flex items-center gap-2 truncate flex-1">
+                                 <input 
+                                   type="checkbox" 
+                                   className="w-3.5 h-3.5 rounded text-blue-600 focus:ring-blue-500 border-slate-300 cursor-pointer"
+                                   checked={selectedStudentIds.has(student.id)}
+                                   onChange={() => toggleSelection(student.id)}
+                                 />
+                                 <span className="truncate cursor-pointer" onClick={() => toggleSelection(student.id)}>{student.name}</span>
                                </div>
                                {onMoveStudent && (
                                  <button 
@@ -331,6 +367,49 @@ export const StudentManager: React.FC<StudentManagerProps> = ({
            </div>
         </div>
       )}
+
+      {/* Floating Action Bar for Selections */}
+      {selectedStudentIds.size > 0 && (
+         <div className="fixed bottom-16 md:bottom-8 left-1/2 -translate-x-1/2 bg-slate-900 text-white px-6 py-3 rounded-xl shadow-2xl flex items-center gap-4 z-50 animate-in slide-in-from-bottom-6 fade-in duration-300">
+            <div className="flex items-center gap-2 border-r border-slate-700 pr-4">
+               <span className="font-bold text-lg">{selectedStudentIds.size}</span>
+               <span className="text-sm font-light text-slate-300">sélectionnés</span>
+               <button onClick={() => setSelectedStudentIds(new Set())} className="ml-2 text-slate-400 hover:text-white">
+                  <X className="w-4 h-4" />
+               </button>
+            </div>
+            
+            <div className="flex items-center gap-2">
+               {onCreateGroupWithStudents && (
+                 <button 
+                    onClick={handleBulkCreateGroup}
+                    className="flex items-center gap-2 px-3 py-1.5 bg-blue-600 hover:bg-blue-500 rounded-lg text-sm font-bold transition"
+                 >
+                    <UsersIcon className="w-4 h-4" />
+                    Créer Groupe
+                 </button>
+               )}
+
+               {onMoveStudents && (
+                 <div className="relative">
+                    <select 
+                       className="appearance-none pl-3 pr-8 py-1.5 bg-slate-800 border border-slate-700 rounded-lg text-sm hover:border-slate-500 cursor-pointer focus:ring-2 focus:ring-blue-500 outline-none"
+                       onChange={(e) => handleBulkMove(e.target.value || null)}
+                       value=""
+                    >
+                       <option value="" disabled>Déplacer vers...</option>
+                       {groups.map(g => (
+                          <option key={g.id} value={g.id}>{g.name}</option>
+                       ))}
+                       <option value="">(Dégrouper)</option>
+                    </select>
+                    <ArrowRightLeft className="w-3 h-3 absolute right-2.5 top-1/2 -translate-y-1/2 pointer-events-none text-slate-400" />
+                 </div>
+               )}
+            </div>
+         </div>
+      )}
+
     </div>
   );
 };

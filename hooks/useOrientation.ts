@@ -298,6 +298,43 @@ export const useOrientation = () => {
     });
   }, []);
 
+  const moveStudentsToGroup = useCallback((studentIds: string[], targetGroupId: string | null) => {
+    setGroups(prevGroups => {
+      // 1. Remove all selected students from their current groups (if any)
+      const cleanedGroups = prevGroups.map(g => ({
+        ...g,
+        studentIds: g.studentIds.filter(sid => !studentIds.includes(sid))
+      }));
+
+      if (!targetGroupId) return cleanedGroups;
+
+      // 2. Add them to target
+      return cleanedGroups.map(g => 
+        g.id === targetGroupId 
+          ? { ...g, studentIds: [...g.studentIds, ...studentIds] } 
+          : g
+      );
+    });
+  }, []);
+
+  const createGroupWithStudents = useCallback((studentIds: string[]) => {
+    setGroups(prevGroups => {
+      // 1. Remove students from existing groups
+       const cleanedGroups = prevGroups.map(g => ({
+        ...g,
+        studentIds: g.studentIds.filter(sid => !studentIds.includes(sid))
+      }));
+      
+      // 2. Create new group
+      const newGroup: Group = {
+        id: crypto.randomUUID(),
+        name: `Groupe ${cleanedGroups.length + 1}`,
+        studentIds: studentIds
+      };
+
+      return [...cleanedGroups, newGroup];
+    });
+  }, []);
 
   // --- ACTIONS: CLASS MANAGEMENT ---
   const saveClass = useCallback((name: string) => {
@@ -350,6 +387,8 @@ export const useOrientation = () => {
       addEmptyGroup,
       removeGroup,
       moveStudentToGroup,
+      moveStudentsToGroup,
+      createGroupWithStudents,
       saveClass,
       loadClass,
       deleteClass
