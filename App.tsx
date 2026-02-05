@@ -13,7 +13,10 @@ import {
   School,
   Plus,
   Trash2,
-  UserPlus
+  UserPlus,
+  FileSpreadsheet,
+  Upload,
+  ArrowRight
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -33,6 +36,192 @@ const LevelBadge = ({ level }: { level: string }) => {
     N3: 'bg-n3/20 text-n3 border-n3/50 border',
   };
   return <Badge className={colors[level as keyof typeof colors] || 'bg-slate-100'}>{level}</Badge>;
+};
+
+// --- CSV IMPORTER COMPONENT ---
+
+const CsvImporter = ({ onImport, onCancel }: { onImport: (className: string, students: string[]) => void, onCancel: () => void }) => {
+  const [rawRows, setRawRows] = useState<string[][]>([]);
+  const [headers, setHeaders] = useState<string[]>([]);
+  const [step, setStep] = useState<'upload' | 'mapping'>('upload');
+  
+  // Form State
+  const [className, setClassName] = useState('');
+  const [colFirstName, setColFirstName] = useState<string>('');
+  const [colLastName, setColLastName] = useState<string>('');
+
+  const handleFileChange = (e: React.ChangeEvent<HTMLInputElement>) => {
+    if (e.target.files && e.target.files[0]) {
+      const selectedFile = e.target.files[0];
+      setClassName(selectedFile.name.replace('.csv', ''));
+      
+      const reader = new FileReader();
+      reader.onload = (event) => {
+        const text = event.target?.result as string;
+        if (!text) return;
+        
+        // Basic CSV parsing (handles simple comma or semicolon separation)
+        const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
+        if (lines.length > 0) {
+          // Detect separator (comma or semicolon) based on first line
+          const separator = lines[0].includes(';') ? ';' : ',';
+          const parsedRows = lines.map(line => line.split(separator).map(cell => cell.trim().replace(/^"|"$/g, '')));
+          
+          setHeaders(parsedRows[0]);
+          setRawRows(parsedRows.slice(1));
+          
+          // Auto-detect columns if possible
+          const headerLower = parsedRows[0].map(h => h.toLowerCase());
+          const fnIndex = headerLower.findIndex(h => h.includes('prenom') || h.includes('first'));
+          const lnIndex = headerLower.findIndex(h => h.includes('nom') || h.includes('last'));
+          
+          if (fnIndex !== -1) setColFirstName(parsedRows[0][fnIndex]);
+          else if (parsedRows[0].length > 0) setColFirstName(parsedRows[0][0]); // Default to 1st col
+
+          if (lnIndex !== -1) setColLastName(parsedRows[0][lnIndex]);
+          else if (parsedRows[0].length > 1) setColLastName(parsedRows[0][1]); // Default to 2nd col
+          
+          setStep('mapping');
+        }
+      };
+      reader.readAsText(selectedFile);
+    }
+  };
+
+  const getPreviewStudents = () => {
+    return rawRows.slice(0, 3).map(row => {
+      const fnIndex = headers.indexOf(colFirstName);
+      const lnIndex = headers.indexOf(colLastName);
+      const fn = fnIndex !== -1 ? row[fnIndex] : '';
+      const ln = lnIndex !== -1 ? row[lnIndex] : '';
+      return `${fn} ${ln}`.trim();
+    });
+  };
+
+  const handleFinalImport = () => {
+    const students = rawRows.map(row => {
+      const fnIndex = headers.indexOf(colFirstName);
+      const lnIndex = headers.indexOf(colLastName);
+      const fn = fnIndex !== -1 ? row[fnIndex] : '';
+      const ln = lnIndex !== -1 ? row[lnIndex] : '';
+      return `${fn} ${ln}`.trim();
+    }).filter(s => s !== ''); // Remove empty
+
+    onImport(className, students);
+  };
+
+  if (step === 'upload') {
+    return (
+      <div className="bg-slate-50 border-2 border-dashed border-slate-300 rounded-xl p-8 text-center space-y-4">
+        <div className="mx-auto w-12 h-12 bg-blue-100 text-blue-600 rounded-full flex items-center justify-center">
+          <Upload size={24} />
+        </div>
+        <div>
+          <h4 className="font-bold text-slate-700">Importer un fichier CSV</h4>
+          <p className="text-sm text-slate-500 mt-1">Sélectionnez un fichier contenant votre liste d'élèves (Export Pronote, Excel...)</p>
+        </div>
+        <input 
+          type="file" 
+          accept=".csv" 
+          onChange={handleFileChange}
+          className="hidden" 
+          id="csv-upload"
+        />
+        <div className="flex justify-center gap-3">
+           <button onClick={onCancel} className="px-4 py-2 text-slate-500 font-medium hover:bg-slate-200 rounded-lg">
+             Annuler
+           </button>
+           <label 
+            htmlFor="csv-upload" 
+            className="cursor-pointer bg-blue-600 hover:bg-blue-700 text-white px-4 py-2 rounded-lg font-medium inline-flex items-center gap-2"
+          >
+            Choisir un fichier
+          </label>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="bg-slate-50 border border-slate-200 rounded-xl p-6 space-y-6">
+      <div className="flex justify-between items-center border-b pb-4">
+        <h4 className="font-bold text-slate-700 flex items-center gap-2">
+          <FileSpreadsheet className="text-green-600" size={20} />
+          Configuration de l'import
+        </h4>
+        <button onClick={onCancel} className="text-slate-400 hover:text-slate-600">
+          <XCircle size={20} />
+        </button>
+      </div>
+
+      <div className="grid md:grid-cols-2 gap-6">
+        <div className="space-y-4">
+          <div>
+            <label className="block text-xs font-bold uppercase text-slate-500 mb-1">Nom de la classe</label>
+            <input 
+              value={className}
+              onChange={(e) => setClassName(e.target.value)}
+              className="w-full p-2 border rounded-lg bg-white"
+            />
+          </div>
+          
+          <div className="p-4 bg-white rounded-lg border border-blue-100 shadow-sm">
+             <div className="text-sm font-bold text-blue-800 mb-3 flex items-center gap-2">
+               Mapping des colonnes
+             </div>
+             <div className="space-y-3">
+               <div>
+                 <label className="block text-xs text-slate-500 mb-1">Colonne Prénom</label>
+                 <select 
+                   value={colFirstName}
+                   onChange={(e) => setColFirstName(e.target.value)}
+                   className="w-full p-2 border rounded bg-slate-50 text-sm"
+                 >
+                   <option value="">-- Ignorer --</option>
+                   {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                 </select>
+               </div>
+               <div>
+                 <label className="block text-xs text-slate-500 mb-1">Colonne Nom</label>
+                 <select 
+                   value={colLastName}
+                   onChange={(e) => setColLastName(e.target.value)}
+                   className="w-full p-2 border rounded bg-slate-50 text-sm"
+                 >
+                   <option value="">-- Ignorer --</option>
+                   {headers.map(h => <option key={h} value={h}>{h}</option>)}
+                 </select>
+               </div>
+             </div>
+          </div>
+        </div>
+
+        <div className="bg-white rounded-lg border border-slate-200 p-4">
+          <label className="block text-xs font-bold uppercase text-slate-500 mb-2">Aperçu du résultat</label>
+          <div className="space-y-2 mb-4">
+             {getPreviewStudents().map((name, i) => (
+               <div key={i} className="flex items-center gap-2 text-sm p-2 bg-slate-50 rounded border border-slate-100 text-slate-700">
+                  <div className="w-6 h-6 rounded-full bg-slate-200 flex items-center justify-center text-xs font-bold text-slate-500">{i+1}</div>
+                  {name || <span className="text-slate-400 italic">(Vide)</span>}
+               </div>
+             ))}
+             {rawRows.length > 3 && (
+               <div className="text-xs text-center text-slate-400 italic mt-2">
+                 ... et {rawRows.length - 3} autres élèves
+               </div>
+             )}
+          </div>
+          <button 
+            onClick={handleFinalImport}
+            disabled={!className || (!colFirstName && !colLastName)}
+            className="w-full bg-blue-600 hover:bg-blue-700 disabled:opacity-50 text-white py-2 rounded-lg font-bold shadow-sm flex items-center justify-center gap-2"
+          >
+            Importer {rawRows.length} élèves <ArrowRight size={16} />
+          </button>
+        </div>
+      </div>
+    </div>
+  );
 };
 
 // --- SUB-VIEWS ---
@@ -284,6 +473,9 @@ const AdminPanel = ({
   actions: ReturnType<typeof useOrientation>['actions'] 
 }) => {
   const [adminTab, setAdminTab] = useState<'classes' | 'beacons'>('classes');
+  
+  // CSV Import State
+  const [showCsvImport, setShowCsvImport] = useState(false);
 
   // State pour les formulaires
   const [newClass, setNewClass] = useState('');
@@ -306,9 +498,13 @@ const AdminPanel = ({
     }
   };
 
+  const handleCsvImport = (className: string, students: string[]) => {
+    actions.addClassWithStudents(className, students);
+    setShowCsvImport(false);
+  };
+
   const handleAddStudents = () => {
     if(selectedClassId && studentsInput.trim()) {
-      // Sépare par saut de ligne ou virgule
       const students = studentsInput.split(/[\n,]+/).map(s => s.trim()).filter(Boolean);
       actions.addStudentsToClass(selectedClassId, students);
       setStudentsInput('');
@@ -372,17 +568,29 @@ const AdminPanel = ({
           <div className="md:col-span-4 space-y-4">
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
               <h3 className="font-bold mb-3 flex items-center gap-2"><School size={18} /> Mes Classes</h3>
-              <form onSubmit={handleAddClass} className="flex gap-2 mb-4">
-                <input 
-                  className="flex-1 p-2 border rounded-lg text-sm" 
-                  value={newClass} 
-                  onChange={e => setNewClass(e.target.value)} 
-                  placeholder="Ex: 6ème A"
-                />
-                <button className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
-                  <Plus size={18} />
-                </button>
-              </form>
+              
+              {!showCsvImport ? (
+                <>
+                  <form onSubmit={handleAddClass} className="flex gap-2 mb-4">
+                    <input 
+                      className="flex-1 p-2 border rounded-lg text-sm" 
+                      value={newClass} 
+                      onChange={e => setNewClass(e.target.value)} 
+                      placeholder="Ex: 6ème A"
+                    />
+                    <button className="bg-blue-600 text-white p-2 rounded-lg hover:bg-blue-700">
+                      <Plus size={18} />
+                    </button>
+                  </form>
+                  <button 
+                    onClick={() => setShowCsvImport(true)}
+                    className="w-full mb-4 py-2 px-3 bg-slate-100 hover:bg-slate-200 text-slate-700 rounded-lg text-sm font-medium flex items-center justify-center gap-2 transition-colors border border-slate-200"
+                  >
+                    <FileSpreadsheet size={16} /> Importer CSV
+                  </button>
+                </>
+              ) : null}
+
               <div className="space-y-2">
                 {state.classes.map(c => (
                   <button
@@ -390,6 +598,7 @@ const AdminPanel = ({
                     onClick={() => {
                       setSelectedClassId(c.id);
                       setSelectedStudentsForGroup([]);
+                      setShowCsvImport(false); // Close importer if selecting a class
                     }}
                     className={clsx(
                       "w-full text-left p-3 rounded-lg border transition-all flex justify-between items-center",
@@ -433,13 +642,28 @@ const AdminPanel = ({
             </div>
           </div>
 
-          {/* COLONNE DROITE: Gestion de la classe sélectionnée */}
+          {/* COLONNE DROITE: Gestion de la classe sélectionnée ou Import */}
           <div className="md:col-span-8">
-            {selectedClass ? (
+            {showCsvImport ? (
+              <CsvImporter 
+                onImport={handleCsvImport} 
+                onCancel={() => setShowCsvImport(false)} 
+              />
+            ) : selectedClass ? (
               <div className="space-y-6">
                 {/* Ajout d'élèves */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-                  <h3 className="font-bold text-lg mb-4 text-slate-800">Gestion de la {selectedClass.name}</h3>
+                  <div className="flex justify-between items-center mb-4">
+                    <h3 className="font-bold text-lg text-slate-800">Gestion de la {selectedClass.name}</h3>
+                    <button 
+                      onClick={() => actions.removeClass(selectedClass.id)}
+                      className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors"
+                      title="Supprimer la classe"
+                    >
+                      <Trash2 size={18} />
+                    </button>
+                  </div>
+                  
                   <div className="mb-4">
                     <label className="block text-sm font-medium mb-1 text-slate-600">Ajouter des élèves (copier/coller liste)</label>
                     <div className="flex gap-2">
@@ -510,7 +734,13 @@ const AdminPanel = ({
             ) : (
               <div className="h-full flex flex-col items-center justify-center text-slate-400 bg-slate-50 rounded-2xl border-2 border-dashed border-slate-200 p-12">
                 <School size={48} className="mb-4 opacity-20" />
-                <p>Sélectionnez une classe à gauche pour gérer les élèves et les groupes</p>
+                <p>Sélectionnez une classe à gauche pour gérer les élèves</p>
+                <button 
+                   onClick={() => setShowCsvImport(true)}
+                   className="mt-4 text-blue-600 hover:underline text-sm font-medium"
+                >
+                  ou importez un fichier CSV
+                </button>
               </div>
             )}
           </div>

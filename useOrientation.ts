@@ -113,6 +113,17 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
+  // Nouvelle action pour l'import CSV
+  const addClassWithStudents = (name: string, students: string[]) => {
+    const newClass: ClassRoom = {
+      id: generateId(),
+      name,
+      students: students
+    };
+    const newState = { ...state, classes: [...state.classes, newClass] };
+    syncState(newState);
+  };
+
   const addStudentsToClass = (classId: string, studentNames: string[]) => {
     const classIndex = state.classes.findIndex(c => c.id === classId);
     if (classIndex === -1) return;
@@ -229,6 +240,7 @@ export const useOrientation = () => {
     isOfflineMode,
     actions: {
       addClass,
+      addClassWithStudents,
       addStudentsToClass,
       removeClass,
       addGroup,

@@ -1,8 +1,8 @@
 import { initializeApp } from "firebase/app";
 import { getFirestore } from "firebase/firestore";
 
-// Access environment variables with type assertion to avoid TS errors if vite types are missing
-const env = (import.meta as any).env || {};
+// @ts-ignore: Accès safe aux variables d'environnement Vite sans forcer les types
+const env = import.meta.env || {};
 
 // Utilisation des variables d'environnement pour Vercel/Vite
 // Si les variables ne sont pas définies, on utilise des valeurs fictives pour éviter le crash au démarrage
