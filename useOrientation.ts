@@ -16,16 +16,16 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-// État initial par défaut
+// État initial par défaut avec des motifs de poinçons (X, Carré, Ligne, etc.)
 const INITIAL_STATE: GameState = {
   beacons: [
-    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: 'A' },
-    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: 'B' },
-    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: 'C' },
-    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: 'D' },
-    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: 'E' },
+    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: '1000101010001000101010001' }, // X pattern
+    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: '1111110001100011000111111' }, // Square
+    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: '0010000100111110010000100' }, // Cross
+    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: '1111100000000000000011111' }, // Top/Bottom lines
+    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: '1000001000001000001000001' }, // Diagonal
   ],
-  classes: [], // Nouvelle liste de classes vide par défaut
+  classes: [], 
   groups: [],
   runs: []
 };
@@ -56,10 +56,10 @@ export const useOrientation = () => {
             const data = docSnap.data() as GameState;
             // Migration douce : si 'classes' n'existe pas dans la DB existante, on met un tableau vide
             if (!data.classes) data.classes = [];
-            // Migration douce : ajout punchCode par défaut si absent
+            // Migration douce : ajout punchCode par défaut si absent (Chaîne vide ou ?)
             data.beacons = data.beacons.map(b => ({
                 ...b,
-                punchCode: b.punchCode || '?'
+                punchCode: b.punchCode || '0000000000000000000000000'
             }));
             setState(data);
             setIsOfflineMode(false);

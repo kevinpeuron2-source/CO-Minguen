@@ -7,7 +7,7 @@ export interface Beacon {
   code: string;
   level: Level;
   points: number;
-  punchCode: string; // Nouveau champ pour le poinçon (ex: "A", ".:.", etc.)
+  punchCode: string; // Chaîne de 25 caractères ('0' ou '1') représentant une grille 5x5
 }
 
 export interface ClassRoom {

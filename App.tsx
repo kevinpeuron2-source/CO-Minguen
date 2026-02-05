@@ -41,6 +41,51 @@ const LevelBadge = ({ level }: { level: string }) => {
   return <Badge className={colors[level as keyof typeof colors] || 'bg-slate-100'}>{level}</Badge>;
 };
 
+// --- PUNCH GRID COMPONENT ---
+
+const PunchGrid = ({ 
+  pattern, 
+  onChange, 
+  readonly = false, 
+  size = 'md' 
+}: { 
+  pattern: string; 
+  onChange?: (newPattern: string) => void; 
+  readonly?: boolean;
+  size?: 'sm' | 'md' | 'lg';
+}) => {
+  // Ensure pattern is 25 chars
+  const safePattern = (pattern && pattern.length === 25) ? pattern : "0".repeat(25);
+  const cells = safePattern.split('');
+
+  const handleToggle = (index: number) => {
+    if (readonly || !onChange) return;
+    const newCells = [...cells];
+    newCells[index] = newCells[index] === '1' ? '0' : '1';
+    onChange(newCells.join(''));
+  };
+
+  const cellSize = size === 'sm' ? 'w-1.5 h-1.5' : size === 'md' ? 'w-3 h-3' : 'w-8 h-8';
+  const gapSize = size === 'sm' ? 'gap-0.5' : 'gap-1';
+
+  return (
+    <div className={clsx("grid grid-cols-5", gapSize, "bg-slate-100 p-1 rounded border border-slate-300 inline-block")}>
+      {cells.map((cell, idx) => (
+        <div
+          key={idx}
+          onClick={() => handleToggle(idx)}
+          className={clsx(
+            "rounded-full transition-all border",
+            cellSize,
+            cell === '1' ? "bg-red-600 border-red-700" : "bg-white border-slate-300",
+            !readonly && "cursor-pointer hover:bg-red-100 hover:border-red-300"
+          )}
+        />
+      ))}
+    </div>
+  );
+};
+
 // --- CSV IMPORTER COMPONENT ---
 
 const CsvImporter = ({ onImport, onCancel }: { onImport: (className: string, students: string[]) => void, onCancel: () => void }) => {
@@ -492,7 +537,8 @@ const AdminPanel = ({
   // State pour les balises
   const [beaconCode, setBeaconCode] = useState('');
   const [beaconLevel, setBeaconLevel] = useState('N1');
-  const [beaconPunch, setBeaconPunch] = useState('');
+  // Initialiser avec 25 zéros
+  const [beaconPunch, setBeaconPunch] = useState('0000000000000000000000000');
   const [editingBeaconId, setEditingBeaconId] = useState<string | null>(null);
 
   // -- CLASSES HANDLERS --
@@ -549,7 +595,7 @@ const AdminPanel = ({
       // Reset form
       setBeaconCode('');
       setBeaconLevel('N1');
-      setBeaconPunch('');
+      setBeaconPunch('0000000000000000000000000');
     }
   };
 
@@ -557,14 +603,14 @@ const AdminPanel = ({
     setEditingBeaconId(b.id);
     setBeaconCode(b.code);
     setBeaconLevel(b.level);
-    setBeaconPunch(b.punchCode || '');
+    setBeaconPunch(b.punchCode || '0000000000000000000000000');
   };
 
   const handleCancelEdit = () => {
     setEditingBeaconId(null);
     setBeaconCode('');
     setBeaconLevel('N1');
-    setBeaconPunch('');
+    setBeaconPunch('0000000000000000000000000');
   };
 
   const selectedClass = state.classes.find(c => c.id === selectedClassId);
@@ -812,20 +858,15 @@ const AdminPanel = ({
               </div>
               
               <div>
-                 <label className="block text-sm font-medium mb-1 text-slate-600">Code Poinçon</label>
-                 <div className="relative">
-                   <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
-                     <Stamp size={16} className="text-slate-400" />
-                   </div>
-                   <input 
-                      className="w-full pl-10 p-2 border rounded-lg bg-slate-50 focus:bg-white transition-colors" 
-                      value={beaconPunch} 
-                      onChange={e => setBeaconPunch(e.target.value)} 
-                      placeholder="Ex: A, B, 12..."
-                      required
-                   />
+                 <label className="block text-sm font-medium mb-1 text-slate-600">Code Poinçon (5x5)</label>
+                 <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex justify-center">
+                    <PunchGrid 
+                      pattern={beaconPunch} 
+                      onChange={setBeaconPunch} 
+                      size="lg" 
+                    />
                  </div>
-                 <p className="text-xs text-slate-400 mt-1">Le code visible sur la pince ou le boîtier.</p>
+                 <p className="text-xs text-slate-400 mt-2 text-center">Cliquez sur les points pour dessiner le motif du poinçon.</p>
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -870,9 +911,8 @@ const AdminPanel = ({
                     </span>
                     <div>
                        <div className="text-xs font-bold text-slate-400 uppercase tracking-wider">{b.level}</div>
-                       <div className="text-sm font-medium text-slate-700 flex items-center gap-1">
-                         <Stamp size={12} className="text-slate-400" /> 
-                         Poinçon: <span className="font-bold text-slate-900">{b.punchCode || '?'}</span>
+                       <div className="mt-1">
+                          <PunchGrid pattern={b.punchCode} readonly size="sm" />
                        </div>
                     </div>
                   </div>
