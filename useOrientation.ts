@@ -6,7 +6,7 @@ import {
   updateDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
-import { GameState, Beacon, StudentGroup, ActiveRun, Level, ClassRoom } from './types';
+import { GameState, Beacon, StudentGroup, ActiveRun, Level, ClassRoom, RunMode } from './types';
 
 // Fonction utilitaire pour générer des IDs uniques (compatible vieux navigateurs)
 const generateId = () => {
@@ -52,7 +52,7 @@ export const useOrientation = () => {
     const initFirestore = async () => {
       setSyncStatus('connecting');
       try {
-        const docRef = doc(db, 'sessions', 'current-race');
+        const docRef = doc(db, 'sessions', 'session_minguen');
         
         // Tentative d'abonnement aux changements
         unsubscribe = onSnapshot(docRef, (docSnap) => {
@@ -67,6 +67,14 @@ export const useOrientation = () => {
                 punchCode: b.punchCode || '0000000000000000000000000',
                 distance: b.distance || 0
             }));
+            // Migration douce : mode par défaut 'star'
+            if (data.runs) {
+                data.runs = data.runs.map(r => ({
+                    ...r,
+                    mode: r.mode || 'star',
+                    status: (r.status === 'running' && r.endTime) ? 'checking' : r.status // Migration old running with endtime
+                }));
+            }
             setState(data);
             setIsOfflineMode(false);
             setSyncStatus('connected');
@@ -116,7 +124,7 @@ export const useOrientation = () => {
     if (!isOfflineMode) {
       console.log("☁️ Envoi des modifications vers Firebase...");
       setSyncStatus('saving');
-      const docRef = doc(db, 'sessions', 'current-race');
+      const docRef = doc(db, 'sessions', 'session_minguen');
       updateDoc(docRef, newState as any)
         .then(() => {
           setSyncStatus('connected');
@@ -194,13 +202,17 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
-  const startRun = (groupId: string, beaconIds: string[]) => {
-    const duration = getTimeLimit(beaconIds.length);
+  const startRun = (groupId: string, beaconIds: string[], mode: RunMode = 'star', customDuration?: number) => {
+    // Si mode 'star', beaconIds est la liste à trouver.
+    // Si mode 'score', beaconIds est vide au départ (on ajoutera celles trouvées).
+    
+    const duration = customDuration ? customDuration * 60 : getTimeLimit(beaconIds.length);
     const newRun: ActiveRun = {
       id: generateId(),
       groupId,
-      beaconIds,
-      validatedBeaconIds: [], // Initialise vide
+      mode,
+      beaconIds: mode === 'star' ? beaconIds : [],
+      validatedBeaconIds: [], 
       startTime: Date.now(),
       durationLimit: duration,
       status: 'running'
@@ -213,6 +225,20 @@ export const useOrientation = () => {
     
     const newState = { ...state, runs: [...filteredRuns, newRun] };
     syncState(newState);
+  };
+
+  // Nouvelle action pour arrêter le chrono (Arrivée élève) sans valider les points tout de suite
+  const stopRunTimer = (runId: string) => {
+    const runIndex = state.runs.findIndex(r => r.id === runId);
+    if (runIndex === -1) return;
+
+    const updatedRuns = [...state.runs];
+    updatedRuns[runIndex] = { 
+        ...updatedRuns[runIndex], 
+        status: 'checking', // Nouveau status: chrono arrêté, en attente de vérification
+        endTime: Date.now() 
+    };
+    syncState({ ...state, runs: updatedRuns });
   };
 
   // Nouvelle action pour basculer l'état validé d'une balise
@@ -230,7 +256,12 @@ export const useOrientation = () => {
     }
 
     const updatedRuns = [...state.runs];
-    updatedRuns[runIndex] = { ...run, validatedBeaconIds: newValidatedIds };
+    updatedRuns[runIndex] = { 
+        ...run, 
+        validatedBeaconIds: newValidatedIds,
+        // En mode score, on met aussi à jour beaconIds pour garder la trace de ce qui a été tenté/trouvé
+        beaconIds: run.mode === 'score' ? newValidatedIds : run.beaconIds 
+    };
 
     syncState({ ...state, runs: updatedRuns });
   };
@@ -241,22 +272,35 @@ export const useOrientation = () => {
 
     const run = state.runs[runIndex];
     const newStatus = success ? 'completed' : 'failed';
-    
+    const endTime = run.endTime || Date.now(); // Utiliser l'heure d'arrêt si déjà arrêté
+
     // Calcul des points
     let pointsToAdd = 0;
+    
     if (success) {
-      // Si validatedBeaconIds existe, on utilise ça, sinon on prend tout (rétrocompatibilité ou validation globale)
+      // Liste des balises validées
       const idsToCount = (run.validatedBeaconIds && run.validatedBeaconIds.length > 0) 
         ? run.validatedBeaconIds 
-        : (run.validatedBeaconIds ? [] : run.beaconIds); // Si vide mais défini -> 0 pts. Si indéfini -> tout.
+        : (run.validatedBeaconIds ? [] : run.beaconIds);
 
-      // Cependant, pour le bouton "Trouvé", si l'utilisateur n'a rien coché (car c'est nouveau),
-      // il vaut peut-être mieux assumer que tout est bon si validatedBeaconIds est indéfini.
-      // Si validatedBeaconIds est un tableau vide, c'est que l'utilisateur a vu l'interface mais n'a rien coché => 0pts.
-      // S'il est undefined (vieux runs), on prend tout.
-      
       const runBeacons = state.beacons.filter(b => idsToCount.includes(b.id));
-      pointsToAdd = runBeacons.reduce((acc, b) => acc + b.points, 0);
+      const basePoints = runBeacons.reduce((acc, b) => acc + b.points, 0);
+
+      pointsToAdd = basePoints;
+
+      // PÉNALITÉS pour le mode SCORE
+      if (run.mode === 'score') {
+         const durationSec = (endTime - run.startTime) / 1000;
+         const overtimeSec = durationSec - run.durationLimit;
+         
+         if (overtimeSec > 0) {
+            // Pénalité : 5 points par minute entamée (exemple standard)
+            const penaltyMinutes = Math.ceil(overtimeSec / 60);
+            const penalty = penaltyMinutes * 5; 
+            pointsToAdd = Math.max(0, pointsToAdd - penalty); // Pas de points négatifs totaux ? Ou si ?
+            console.log(`Pénalité de temps: -${penalty} pts (${Math.round(overtimeSec)}s dépassement)`);
+         }
+      }
     }
 
     // Mise à jour du groupe
@@ -271,7 +315,11 @@ export const useOrientation = () => {
 
     // Mise à jour de la course
     const updatedRuns = [...state.runs];
-    updatedRuns[runIndex] = { ...run, status: newStatus, endTime: Date.now() };
+    updatedRuns[runIndex] = { 
+        ...run, 
+        status: newStatus, 
+        endTime: endTime 
+    };
 
     const newState = { ...state, groups: updatedGroups, runs: updatedRuns };
     syncState(newState);
@@ -316,6 +364,7 @@ export const useOrientation = () => {
       addGroup,
       removeGroup,
       startRun,
+      stopRunTimer,
       toggleBeaconStatus,
       completeRun,
       addBeacon,

@@ -1,7 +1,8 @@
 
 export type Level = 'N1' | 'N2' | 'N3';
 
-export type RunStatus = 'idle' | 'running' | 'completed' | 'failed';
+export type RunStatus = 'idle' | 'running' | 'checking' | 'completed' | 'failed';
+export type RunMode = 'star' | 'score';
 
 export interface Beacon {
   id: string;
@@ -28,7 +29,8 @@ export interface StudentGroup {
 export interface ActiveRun {
   id: string;
   groupId: string;
-  beaconIds: string[]; // IDs of beacons being searched for
+  mode: RunMode; // 'star' (Etoile) ou 'score' (Course au score)
+  beaconIds: string[]; // IDs of beacons being searched for (Target for Star, Found for Score)
   validatedBeaconIds?: string[]; // IDs des balises effectivement validées par le prof
   startTime: number; // Timestamp in ms
   durationLimit: number; // In seconds

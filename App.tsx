@@ -1,6 +1,6 @@
 import React, { useState, useEffect } from 'react';
 import { useOrientation, getTimeLimit, SyncStatus } from './useOrientation';
-import { ActiveRun, Beacon } from './types';
+import { ActiveRun, Beacon, RunMode, StudentGroup } from './types';
 import { 
   Users, 
   Flag, 
@@ -33,14 +33,18 @@ import {
   CloudOff,
   CloudUpload,
   Loader2,
-  Check
+  Check,
+  StopCircle,
+  Play,
+  ClipboardCheck,
+  Target
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
 
 // --- UTILITY COMPONENTS ---
 
-const Badge = ({ children, className }: { children: React.ReactNode, className?: string }) => (
+const Badge = ({ children, className }: { children?: React.ReactNode, className?: string }) => (
   <span className={twMerge("px-2 py-1 rounded text-xs font-bold", className)}>
     {children}
   </span>
@@ -306,67 +310,78 @@ const CsvImporter = ({
 
 // --- SUB-VIEWS ---
 
-const RaceControl = ({ 
-  state, 
-  actions 
-}: { 
-  state: ReturnType<typeof useOrientation>['state'], 
-  actions: ReturnType<typeof useOrientation>['actions'] 
-}) => {
-  const [selectedGroup, setSelectedGroup] = useState<string>('');
-  const [selectedBeacons, setSelectedBeacons] = useState<string[]>([]);
-  // UseEffect pour forcer le rafraîchissement du timer UI chaque seconde
-  const [, setTimeUpdate] = useState(0);
+// Type Helper
+type OrientationActions = ReturnType<typeof useOrientation>['actions'];
+type OrientationState = ReturnType<typeof useOrientation>['state'];
 
-  useEffect(() => {
-    const interval = setInterval(() => setTimeUpdate(prev => prev + 1), 1000);
-    return () => clearInterval(interval);
-  }, []);
+interface RunCardProps {
+  run: ActiveRun;
+  groups: StudentGroup[];
+  beacons: Beacon[];
+  actions: OrientationActions;
+}
 
-  const handleStart = () => {
-    if (!selectedGroup || selectedBeacons.length === 0) return;
-    actions.startRun(selectedGroup, selectedBeacons);
-    setSelectedGroup('');
-    setSelectedBeacons([]);
+const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
+  const group = groups.find(g => g.id === run.groupId);
+  
+  // Déterminer les balises à afficher
+  // Pour Star: Seulement les balises cible
+  // Pour Score: Toutes les balises du système (pour validation)
+  const beaconsToShow = run.mode === 'star' 
+      ? beacons.filter(b => run.beaconIds.includes(b.id))
+      : beacons; // On affiche toutes les balises en mode score pour la vérif
+  
+  // Calcul temps
+  const now = run.endTime || Date.now();
+  const elapsedSeconds = Math.floor((now - run.startTime) / 1000);
+  const remainingSeconds = run.durationLimit - elapsedSeconds;
+  const isOvertime = remainingSeconds < 0;
+
+  const formatTime = (secs: number) => {
+    const abs = Math.abs(secs);
+    const m = Math.floor(abs / 60);
+    const s = abs % 60;
+    return `${secs < 0 ? '-' : ''}${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  const toggleBeacon = (id: string) => {
-    if (selectedBeacons.includes(id)) {
-      setSelectedBeacons(selectedBeacons.filter(b => b !== id));
-    } else {
-      setSelectedBeacons([...selectedBeacons, id]);
-    }
-  };
+  // Calcul score prévisionnel (pour mode score)
+  const currentValidatedPoints = beaconsToShow
+      .filter(b => run.validatedBeaconIds?.includes(b.id))
+      .reduce((sum, b) => sum + b.points, 0);
+  
+  const penaltyPoints = (run.mode === 'score' && isOvertime) 
+      ? Math.ceil(Math.abs(remainingSeconds) / 60) * 5 
+      : 0;
 
-  const activeRuns = state.runs.filter(r => r.status === 'running');
-  const availableGroups = state.groups.filter(g => !activeRuns.find(r => r.groupId === g.id));
+  const isChecking = run.status === 'checking';
 
-  // --- Run Card Component ---
-  const RunCard = ({ run }: { run: ActiveRun }) => {
-    const group = state.groups.find(g => g.id === run.groupId);
-    const beacons = state.beacons.filter(b => run.beaconIds.includes(b.id));
-    
-    const elapsedSeconds = Math.floor((Date.now() - run.startTime) / 1000);
-    const remainingSeconds = run.durationLimit - elapsedSeconds;
-    const isOvertime = remainingSeconds < 0;
-
-    const formatTime = (secs: number) => {
-      const abs = Math.abs(secs);
-      const m = Math.floor(abs / 60);
-      const s = abs % 60;
-      return `${isOvertime ? '-' : ''}${m}:${s.toString().padStart(2, '0')}`;
-    };
-
-    return (
-      <div className={clsx(
-        "bg-white rounded-xl shadow-sm border p-4 flex flex-col justify-between transition-all",
-        isOvertime ? "border-red-500 ring-1 ring-red-500" : "border-slate-200"
-      )}>
-        <div className="flex justify-between items-start mb-3">
-          <div>
-            <h3 className="font-bold text-lg text-slate-800">{group?.name}</h3>
-            <div className="flex gap-1 mt-1 flex-wrap">
-              {beacons.map(b => {
+  return (
+    <div className={clsx(
+      "bg-white rounded-xl shadow-sm border p-4 flex flex-col justify-between transition-all",
+      isOvertime ? "border-red-500 ring-1 ring-red-500" : (isChecking ? "border-blue-400 ring-1 ring-blue-200" : "border-slate-200")
+    )}>
+      <div className="flex justify-between items-start mb-3">
+        <div>
+          <div className="flex items-center gap-2">
+             <h3 className="font-bold text-lg text-slate-800">{group?.name}</h3>
+             {run.mode === 'score' && <Badge className="bg-purple-100 text-purple-700 border border-purple-200">Score</Badge>}
+          </div>
+          
+          {/* Si c'est checking ou score, on affiche les instructions de validation */}
+          {(run.mode === 'score' || isChecking) && (
+               <div className="mt-1 flex gap-2 text-xs">
+                  <span className="text-slate-500">Points: <strong className="text-green-600">{currentValidatedPoints}</strong></span>
+                  {penaltyPoints > 0 && <span className="text-slate-500">Pénalité: <strong className="text-red-600">-{penaltyPoints}</strong></span>}
+                  {penaltyPoints > 0 && <span className="font-bold text-slate-800">= {Math.max(0, currentValidatedPoints - penaltyPoints)}</span>}
+               </div>
+          )}
+          
+          {/* Grid des balises */}
+          {/* En mode Score en cours (running), on cache les balises pour ne pas polluer, ou on les affiche ? 
+              Généralement on valide à la fin. On va les cacher si running && score. */}
+          {(run.mode !== 'score' || isChecking) && (
+            <div className="flex gap-1 mt-2 flex-wrap max-h-32 overflow-y-auto pr-1">
+              {beaconsToShow.map(b => {
                 const isValidated = run.validatedBeaconIds?.includes(b.id);
                 return (
                   <button
@@ -381,48 +396,144 @@ const RaceControl = ({
                   >
                     <span className="font-bold text-xs">{b.code}</span>
                     <span className={clsx("text-[10px]", isValidated ? "opacity-100" : "opacity-50")}>
-                      ({b.level})
+                      ({b.level}-{b.points})
                     </span>
                     {isValidated && <Check size={10} strokeWidth={4} />}
                   </button>
                 );
               })}
             </div>
-            <p className="text-[10px] text-slate-400 mt-1 italic">Cliquez sur une balise pour la valider</p>
-          </div>
-          <div className={clsx(
-            "text-2xl font-mono font-bold",
-            isOvertime ? "text-red-600 animate-pulse" : "text-slate-700"
-          )}>
-            {formatTime(remainingSeconds)}
-          </div>
+          )}
+          {run.mode === 'score' && !isChecking && (
+              <p className="text-xs text-slate-400 mt-2 italic flex items-center gap-1">
+                  <Clock size={12} /> Course en cours... Validation à l'arrivée.
+              </p>
+          )}
         </div>
         
-        <div className="flex gap-2 mt-2">
-          <button 
-            onClick={() => actions.completeRun(run.id, true)}
-            className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-          >
-            <CheckCircle2 size={18} /> Terminer
-          </button>
-          <button 
-            onClick={() => actions.completeRun(run.id, false)}
-            className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
-          >
-            <XCircle size={18} /> Abandon
-          </button>
+        {/* Timer Display */}
+        <div className="text-right">
+           <div className={clsx(
+              "text-2xl font-mono font-bold",
+              isOvertime ? "text-red-600 animate-pulse" : (isChecking ? "text-blue-600" : "text-slate-700")
+            )}>
+              {formatTime(remainingSeconds)}
+            </div>
+            {isChecking && <div className="text-[10px] font-bold uppercase text-blue-500 tracking-wider">Chrono Arrêté</div>}
         </div>
       </div>
-    );
+      
+      <div className="flex gap-2 mt-2">
+          {run.mode === 'score' && !isChecking ? (
+              // Mode Score en cours : Bouton Arrivée uniquement
+              <button 
+                onClick={() => actions.stopRunTimer(run.id)}
+                className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+              >
+                  <StopCircle size={18} /> Arrivée (Stop Chrono)
+              </button>
+          ) : (
+              // Mode Etoile ou Mode Score en Checking : Validation finale
+              <>
+                <button 
+                  onClick={() => actions.completeRun(run.id, true)}
+                  className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                >
+                  <CheckCircle2 size={18} /> {run.mode === 'score' ? 'Valider le score' : 'Terminer'}
+                </button>
+                <button 
+                  onClick={() => actions.completeRun(run.id, false)}
+                  className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
+                >
+                  <XCircle size={18} /> Abandon
+                </button>
+              </>
+          )}
+      </div>
+    </div>
+  );
+};
+
+const RaceControl = ({ 
+  state, 
+  actions 
+}: { 
+  state: OrientationState, 
+  actions: OrientationActions 
+}) => {
+  const [raceMode, setRaceMode] = useState<RunMode>('star');
+  const [selectedGroup, setSelectedGroup] = useState<string>('');
+  
+  // Star Mode State
+  const [selectedBeacons, setSelectedBeacons] = useState<string[]>([]);
+  
+  // Score Mode State
+  const [scoreDuration, setScoreDuration] = useState<number>(20); // minutes
+
+  // UseEffect pour forcer le rafraîchissement du timer UI chaque seconde
+  const [, setTimeUpdate] = useState(0);
+
+  useEffect(() => {
+    const interval = setInterval(() => setTimeUpdate(prev => prev + 1), 1000);
+    return () => clearInterval(interval);
+  }, []);
+
+  const handleStart = () => {
+    if (!selectedGroup) return;
+    
+    if (raceMode === 'star') {
+      if (selectedBeacons.length === 0) return;
+      actions.startRun(selectedGroup, selectedBeacons, 'star');
+      setSelectedBeacons([]);
+    } else {
+      actions.startRun(selectedGroup, [], 'score', scoreDuration);
+    }
+    
+    setSelectedGroup('');
   };
+
+  const toggleBeacon = (id: string) => {
+    if (selectedBeacons.includes(id)) {
+      setSelectedBeacons(selectedBeacons.filter(b => b !== id));
+    } else {
+      setSelectedBeacons([...selectedBeacons, id]);
+    }
+  };
+
+  const activeRuns = state.runs.filter(r => r.status === 'running' || r.status === 'checking');
+  const availableGroups = state.groups.filter(g => !activeRuns.find(r => r.groupId === g.id));
 
   return (
     <div className="space-y-6">
       {/* New Run Creator */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
-        <h2 className="text-xl font-bold mb-4 flex items-center gap-2 text-slate-800">
-          <Flag className="text-blue-600" /> Nouveau Départ
-        </h2>
+        <div className="flex items-center justify-between mb-6">
+            <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
+            <Flag className="text-blue-600" /> Nouveau Départ
+            </h2>
+            
+            {/* Mode Selector Toggle */}
+            <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
+                <button
+                    onClick={() => setRaceMode('star')}
+                    className={clsx(
+                        "px-3 py-1.5 rounded-md text-sm font-bold flex items-center gap-2 transition-all",
+                        raceMode === 'star' ? "bg-white text-blue-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    )}
+                >
+                    <Target size={16} /> En Étoile
+                </button>
+                <button
+                    onClick={() => setRaceMode('score')}
+                    className={clsx(
+                        "px-3 py-1.5 rounded-md text-sm font-bold flex items-center gap-2 transition-all",
+                        raceMode === 'score' ? "bg-white text-purple-600 shadow-sm" : "text-slate-500 hover:text-slate-700"
+                    )}
+                >
+                    <ClipboardCheck size={16} /> Au Score
+                </button>
+            </div>
+        </div>
         
         <div className="grid md:grid-cols-2 gap-6">
           <div>
@@ -438,50 +549,72 @@ const RaceControl = ({
                   <option key={g.id} value={g.id}>{g.name}</option>
                 ))
               ) : (
-                <option value="" disabled>Aucun groupe disponible (Créer dans Config)</option>
+                <option value="" disabled>Aucun groupe disponible</option>
               )}
             </select>
           </div>
 
           <div>
-            <label className="block text-sm font-medium text-slate-600 mb-2">
-              Balises (Temps estimé: {getTimeLimit(selectedBeacons.length) / 60} min)
-            </label>
-            <div className="flex flex-wrap gap-2">
-              {state.beacons.map(b => (
-                <button
-                  key={b.id}
-                  onClick={() => toggleBeacon(b.id)}
-                  className={clsx(
-                    "px-3 py-1.5 rounded-full text-sm font-bold border transition-all flex items-center gap-1",
-                    selectedBeacons.includes(b.id) 
-                      ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105" 
-                      : "bg-white text-slate-600 border-slate-300 hover:border-blue-400"
-                  )}
-                >
-                  {b.code} 
-                  <span className="opacity-70 text-xs font-normal">({b.level})</span>
-                  {b.distance && (
-                     <span className={clsx(
-                       "ml-1 text-[10px] px-1 rounded",
-                       selectedBeacons.includes(b.id) ? "bg-white/20" : "bg-slate-100 text-slate-500"
-                     )}>
-                       {b.distance}m
-                     </span>
-                  )}
-                </button>
-              ))}
-            </div>
+             {raceMode === 'star' ? (
+                 <>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                    Balises cibles (Temps auto: {getTimeLimit(selectedBeacons.length) / 60} min)
+                    </label>
+                    <div className="flex flex-wrap gap-2">
+                    {state.beacons.map(b => (
+                        <button
+                        key={b.id}
+                        onClick={() => toggleBeacon(b.id)}
+                        className={clsx(
+                            "px-3 py-1.5 rounded-full text-sm font-bold border transition-all flex items-center gap-1",
+                            selectedBeacons.includes(b.id) 
+                            ? "bg-blue-600 text-white border-blue-600 shadow-md transform scale-105" 
+                            : "bg-white text-slate-600 border-slate-300 hover:border-blue-400"
+                        )}
+                        >
+                        {b.code} 
+                        <span className="opacity-70 text-xs font-normal">({b.level})</span>
+                        </button>
+                    ))}
+                    </div>
+                </>
+             ) : (
+                 <>
+                    <label className="block text-sm font-medium text-slate-600 mb-2">
+                        Durée de l'épreuve (minutes)
+                    </label>
+                    <div className="flex items-center gap-4">
+                        <input 
+                            type="range" 
+                            min="5" 
+                            max="60" 
+                            step="5" 
+                            value={scoreDuration}
+                            onChange={(e) => setScoreDuration(Number(e.target.value))}
+                            className="flex-1"
+                        />
+                        <div className="w-24 p-3 bg-slate-50 border rounded-lg text-center font-bold text-slate-800">
+                            {scoreDuration} min
+                        </div>
+                    </div>
+                    <p className="text-xs text-slate-400 mt-2">
+                        Le groupe doit trouver un maximum de balises en {scoreDuration} minutes. Pénalité de 5pts/min de retard.
+                    </p>
+                 </>
+             )}
           </div>
         </div>
 
         <div className="mt-6 flex justify-end">
           <button 
-            disabled={!selectedGroup || selectedBeacons.length === 0}
+            disabled={!selectedGroup || (raceMode === 'star' && selectedBeacons.length === 0)}
             onClick={handleStart}
-            className="bg-blue-600 disabled:opacity-50 disabled:cursor-not-allowed hover:bg-blue-700 text-white px-6 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center gap-2"
+            className={clsx(
+                "disabled:opacity-50 disabled:cursor-not-allowed text-white px-6 py-3 rounded-xl font-bold shadow-lg transition-all flex items-center gap-2",
+                raceMode === 'star' ? "bg-blue-600 hover:bg-blue-700" : "bg-purple-600 hover:bg-purple-700"
+            )}
           >
-            <Timer size={20} /> Lancer le chrono
+            <Play size={20} fill="currentColor" /> Lancer {raceMode === 'star' ? 'la course' : 'le chrono'}
           </button>
         </div>
       </div>
@@ -499,7 +632,7 @@ const RaceControl = ({
         ) : (
           <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-4">
             {activeRuns.map(run => (
-              <RunCard key={run.id} run={run} />
+              <RunCard key={run.id} run={run} groups={state.groups} beacons={state.beacons} actions={actions} />
             ))}
           </div>
         )}
@@ -597,7 +730,15 @@ const calculateStudentStats = (
 
     studentRuns.forEach(run => {
       const isSuccess = run.status === 'completed';
-      const runBeacons = state.beacons.filter(b => run.beaconIds.includes(b.id));
+      
+      // Determine relevant beacons based on mode
+      // Star: Target beacons
+      // Score: Found beacons (validatedBeaconIds)
+      const relevantBeaconIds = (run.mode === 'score') 
+        ? (run.validatedBeaconIds || []) 
+        : run.beaconIds;
+
+      const runBeacons = state.beacons.filter(b => relevantBeaconIds.includes(b.id));
 
       let timePerBeacon = 0;
       if (run.startTime && run.endTime) {
@@ -609,48 +750,75 @@ const calculateStudentStats = (
         }
       }
 
-      runBeacons.forEach(b => {
-        // Init stats for this beacon if needed
-        if (!beaconStats[b.id]) {
-          beaconStats[b.id] = { 
-            code: b.code, 
-            level: b.level, 
-            attempts: 0, 
-            success: 0, 
-            totalTime: 0, 
-            countForTime: 0 
-          };
-        }
-
-        // Update stats
-        beaconStats[b.id].attempts += 1;
-        if (b.level) {
-            stats[b.level].attempts += 1;
-            // CHECKING IF BEACON WAS ACTUALLY VALIDATED
-            // Prioritize validatedBeaconIds if it exists (granular validation)
-            // If it doesn't exist (old data) or empty but run successful, assume all (if isSuccess is true)
-            // NOTE: Logic here must match completeRun logic somewhat.
-            
-            // If runs has validatedBeaconIds defined:
-            let wasFound = false;
-            if (run.validatedBeaconIds) {
-                wasFound = run.validatedBeaconIds.includes(b.id);
-            } else {
-                // Legacy: if success, assume found.
-                wasFound = isSuccess;
+      // Add points directly for score runs (handling penalties is tricky per beacon, we sum raw points here)
+      if (run.mode === 'score' && isSuccess) {
+          // For stats display, we iterate through beacons found
+          runBeacons.forEach(b => {
+             // Init
+             if (!beaconStats[b.id]) {
+                beaconStats[b.id] = { code: b.code, level: b.level, attempts: 0, success: 0, totalTime: 0, countForTime: 0 };
+             }
+             beaconStats[b.id].attempts += 1;
+             beaconStats[b.id].success += 1;
+             beaconStats[b.id].totalTime += timePerBeacon;
+             beaconStats[b.id].countForTime += 1;
+             
+             if (b.level) {
+                 stats[b.level].attempts += 1;
+                 stats[b.level].found += 1;
+             }
+             totalPoints += b.points;
+          });
+          
+          // Deduct penalty from totalPoints if needed? 
+          // It's hard to attribute penalty to specific beacons. 
+          // So StudentStats might show raw beacon points, while Group Ranking shows net score.
+          // Let's adjust totalPoints with penalty for consistency with ranking.
+          const durationSec = ((run.endTime || 0) - run.startTime) / 1000;
+          const overtimeSec = durationSec - run.durationLimit;
+          if (overtimeSec > 0) {
+              const penalty = Math.ceil(overtimeSec / 60) * 5;
+              totalPoints = Math.max(0, totalPoints - penalty);
+          }
+      } else {
+        // Star Mode Logic (existing)
+        runBeacons.forEach(b => {
+            // Init stats for this beacon if needed
+            if (!beaconStats[b.id]) {
+            beaconStats[b.id] = { 
+                code: b.code, 
+                level: b.level, 
+                attempts: 0, 
+                success: 0, 
+                totalTime: 0, 
+                countForTime: 0 
+            };
             }
 
-            if (wasFound) {
-                stats[b.level].found += 1;
-                totalPoints += b.points;
+            // Update stats
+            beaconStats[b.id].attempts += 1;
+            if (b.level) {
+                stats[b.level].attempts += 1;
                 
-                // Update detailed beacon stats
-                beaconStats[b.id].success += 1;
-                beaconStats[b.id].totalTime += timePerBeacon;
-                beaconStats[b.id].countForTime += 1;
+                let wasFound = false;
+                if (run.validatedBeaconIds) {
+                    wasFound = run.validatedBeaconIds.includes(b.id);
+                } else {
+                    wasFound = isSuccess;
+                }
+
+                if (wasFound) {
+                    stats[b.level].found += 1;
+                    totalPoints += b.points;
+                    
+                    // Update detailed beacon stats
+                    beaconStats[b.id].success += 1;
+                    beaconStats[b.id].totalTime += timePerBeacon;
+                    beaconStats[b.id].countForTime += 1;
+                }
             }
-        }
-      });
+        });
+      }
     });
 
     const totalFound = stats.N1.found + stats.N2.found + stats.N3.found;
@@ -969,7 +1137,7 @@ const AdminPanel = ({
 
     // Regrouper par numéro de groupe
     const groupsToCreate: Record<number, string[]> = {};
-    Object.entries(groupAssignments).forEach(([student, groupNum]) => {
+    (Object.entries(groupAssignments) as [string, number][]).forEach(([student, groupNum]) => {
        if (groupNum > 0) {
          if (!groupsToCreate[groupNum]) groupsToCreate[groupNum] = [];
          groupsToCreate[groupNum].push(student);
@@ -1213,7 +1381,7 @@ const AdminPanel = ({
                               disabled={Object.keys(groupAssignments).length === 0}
                               className="bg-green-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded font-bold hover:bg-green-700 flex items-center gap-1"
                            >
-                             <Layers size={14} /> Valider et créer {Object.values(groupAssignments).reduce((max, curr) => Math.max(max, curr), 0)} groupes
+                             <Layers size={14} /> Valider et créer {(Object.values(groupAssignments) as number[]).reduce((max, curr) => Math.max(max, curr), 0)} groupes
                            </button>
                            {Object.keys(groupAssignments).length > 0 && (
                              <button 
