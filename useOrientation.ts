@@ -3,12 +3,11 @@ import {
   onSnapshot, 
   doc, 
   setDoc, 
-  updateDoc
 } from 'firebase/firestore';
 import { db } from './firebase';
 import { GameState, Beacon, StudentGroup, ActiveRun, Level, ClassRoom, RunMode } from './types';
 
-// Fonction utilitaire pour générer des IDs uniques (compatible vieux navigateurs)
+// Fonction utilitaire pour générer des IDs uniques
 const generateId = () => {
   if (typeof crypto !== 'undefined' && crypto.randomUUID) {
     return crypto.randomUUID();
@@ -16,14 +15,14 @@ const generateId = () => {
   return Date.now().toString(36) + Math.random().toString(36).substr(2);
 };
 
-// État initial par défaut avec des motifs de poinçons (X, Carré, Ligne, etc.)
+// État initial par défaut
 const INITIAL_STATE: GameState = {
   beacons: [
-    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: '1000101010001000101010001', distance: 50 }, // X pattern
-    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: '1111110001100011000111111', distance: 100 }, // Square
-    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: '0010000100111110010000100', distance: 200 }, // Cross
-    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: '1111100000000000000011111', distance: 250 }, // Top/Bottom lines
-    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: '1000001000001000001000001', distance: 400 }, // Diagonal
+    { id: 'b1', code: '31', level: 'N1', points: 10, punchCode: '1000101010001000101010001', distance: 50 },
+    { id: 'b2', code: '32', level: 'N1', points: 10, punchCode: '1111110001100011000111111', distance: 100 },
+    { id: 'b3', code: '45', level: 'N2', points: 20, punchCode: '0010000100111110010000100', distance: 200 },
+    { id: 'b4', code: '46', level: 'N2', points: 20, punchCode: '1111100000000000000011111', distance: 250 },
+    { id: 'b5', code: '60', level: 'N3', points: 30, punchCode: '1000001000001000001000001', distance: 400 },
   ],
   classes: [], 
   groups: [],
@@ -52,59 +51,61 @@ export const useOrientation = () => {
     const initFirestore = async () => {
       setSyncStatus('connecting');
       try {
-        const docRef = doc(db, 'sessions', 'session_minguen');
+        const docRef = doc(db, 'sessions', 'active');
         
-        // Tentative d'abonnement aux changements
+        // Abonnement temps réel
         unsubscribe = onSnapshot(docRef, (docSnap) => {
           if (docSnap.exists()) {
-            console.log("🔥 Données reçues de Firebase");
             const data = docSnap.data() as GameState;
-            // Migration douce : si 'classes' n'existe pas dans la DB existante, on met un tableau vide
+            
+            // Protection contre les données partielles
             if (!data.classes) data.classes = [];
-            // Migration douce : ajout punchCode par défaut si absent (Chaîne vide ou ?)
+            if (!data.beacons) data.beacons = INITIAL_STATE.beacons;
+            if (!data.groups) data.groups = [];
+            if (!data.runs) data.runs = [];
+
+            // Nettoyage des balises
             data.beacons = data.beacons.map(b => ({
                 ...b,
                 punchCode: b.punchCode || '0000000000000000000000000',
                 distance: b.distance || 0
             }));
-            // Migration douce : mode par défaut 'star'
+
+            // Nettoyage des courses
             if (data.runs) {
                 data.runs = data.runs.map(r => ({
                     ...r,
                     mode: r.mode || 'star',
-                    status: (r.status === 'running' && r.endTime) ? 'checking' : r.status // Migration old running with endtime
+                    status: (r.status === 'running' && r.endTime) ? 'checking' : r.status
                 }));
             }
+
             setState(data);
             setIsOfflineMode(false);
             setSyncStatus('connected');
           } else {
             console.log("🔥 Création du document initial");
             setSyncStatus('saving');
-            // Si le document n'existe pas, on l'initialise
             setDoc(docRef, INITIAL_STATE)
               .then(() => {
                 setSyncStatus('connected');
               })
               .catch((err) => {
-                // Si l'écriture échoue (ex: droits ou config invalide), on passe en offline
-                console.warn("Écriture initiale échouée, passage en mode hors-ligne.", err);
+                console.warn("Écriture initiale échouée", err);
                 setIsOfflineMode(true);
                 setSyncStatus('offline');
               });
           }
           setLoading(false);
         }, (error) => {
-          // Callback d'erreur Firestore (ex: pas de réseau, mauvaise config)
-          console.warn("Connexion Firebase impossible, passage en mode hors-ligne.", error.code);
+          console.warn("Erreur de connexion Firebase", error);
           setIsOfflineMode(true);
           setLoading(false);
           setSyncStatus('offline');
         });
 
       } catch (err) {
-        // Erreur synchrone d'initialisation
-        console.warn("Erreur d'initialisation Firestore, passage en mode hors-ligne.");
+        console.warn("Erreur d'initialisation", err);
         setIsOfflineMode(true);
         setLoading(false);
         setSyncStatus('offline');
@@ -118,19 +119,22 @@ export const useOrientation = () => {
     };
   }, []);
 
-  // Helper de synchronisation (gère le mode hors-ligne)
+  // Fonction centrale de synchronisation
   const syncState = (newState: GameState) => {
+    // 1. Mise à jour locale immédiate (Optimistic UI)
     setState(newState);
+    
+    // 2. Sauvegarde Cloud
     if (!isOfflineMode) {
-      console.log("☁️ Envoi des modifications vers Firebase...");
       setSyncStatus('saving');
-      const docRef = doc(db, 'sessions', 'session_minguen');
-      updateDoc(docRef, newState as any)
+      const docRef = doc(db, 'sessions', 'active');
+      
+      setDoc(docRef, newState)
         .then(() => {
           setSyncStatus('connected');
         })
         .catch(e => {
-          console.error("Échec de la synchronisation", e);
+          console.error("Échec de la sauvegarde", e);
           setSyncStatus('offline');
         });
     }
@@ -138,7 +142,6 @@ export const useOrientation = () => {
 
   // --- ACTIONS ---
 
-  // Gestion des classes
   const addClass = (name: string) => {
     const newClass: ClassRoom = {
       id: generateId(),
@@ -149,7 +152,6 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
-  // Nouvelle action pour l'import CSV
   const addClassWithStudents = (name: string, students: string[]) => {
     const newClass: ClassRoom = {
       id: generateId(),
@@ -165,7 +167,6 @@ export const useOrientation = () => {
     if (classIndex === -1) return;
 
     const updatedClasses = [...state.classes];
-    // On ajoute les étudiants sans doublons
     const currentStudents = new Set(updatedClasses[classIndex].students);
     studentNames.forEach(name => {
       if (name.trim()) currentStudents.add(name.trim());
@@ -184,8 +185,6 @@ export const useOrientation = () => {
      syncState(newState);
   };
 
-  // Gestion des groupes et courses
-
   const addGroup = (name: string, members: string[]) => {
     const newGroup: StudentGroup = {
       id: generateId(),
@@ -203,9 +202,6 @@ export const useOrientation = () => {
   };
 
   const startRun = (groupId: string, beaconIds: string[], mode: RunMode = 'star', customDuration?: number) => {
-    // Si mode 'star', beaconIds est la liste à trouver.
-    // Si mode 'score', beaconIds est vide au départ (on ajoutera celles trouvées).
-    
     const duration = customDuration ? customDuration * 60 : getTimeLimit(beaconIds.length);
     const newRun: ActiveRun = {
       id: generateId(),
@@ -218,7 +214,7 @@ export const useOrientation = () => {
       status: 'running'
     };
 
-    // Nettoyer les courses précédentes
+    // On archive les anciennes courses du même groupe qui ne sont pas finies (reset)
     const filteredRuns = state.runs.filter(r => 
       r.groupId !== groupId || r.status === 'completed' || r.status === 'failed'
     );
@@ -227,7 +223,6 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
-  // Nouvelle action pour arrêter le chrono (Arrivée élève) sans valider les points tout de suite
   const stopRunTimer = (runId: string) => {
     const runIndex = state.runs.findIndex(r => r.id === runId);
     if (runIndex === -1) return;
@@ -235,13 +230,12 @@ export const useOrientation = () => {
     const updatedRuns = [...state.runs];
     updatedRuns[runIndex] = { 
         ...updatedRuns[runIndex], 
-        status: 'checking', // Nouveau status: chrono arrêté, en attente de vérification
+        status: 'checking', 
         endTime: Date.now() 
     };
     syncState({ ...state, runs: updatedRuns });
   };
 
-  // Nouvelle action pour basculer l'état validé d'une balise
   const toggleBeaconStatus = (runId: string, beaconId: string) => {
     const runIndex = state.runs.findIndex(r => r.id === runId);
     if (runIndex === -1) return;
@@ -259,7 +253,6 @@ export const useOrientation = () => {
     updatedRuns[runIndex] = { 
         ...run, 
         validatedBeaconIds: newValidatedIds,
-        // En mode score, on met aussi à jour beaconIds pour garder la trace de ce qui a été tenté/trouvé
         beaconIds: run.mode === 'score' ? newValidatedIds : run.beaconIds 
     };
 
@@ -272,13 +265,12 @@ export const useOrientation = () => {
 
     const run = state.runs[runIndex];
     const newStatus = success ? 'completed' : 'failed';
-    const endTime = run.endTime || Date.now(); // Utiliser l'heure d'arrêt si déjà arrêté
+    const endTime = run.endTime || Date.now(); 
 
     // Calcul des points
     let pointsToAdd = 0;
     
     if (success) {
-      // Liste des balises validées
       const idsToCount = (run.validatedBeaconIds && run.validatedBeaconIds.length > 0) 
         ? run.validatedBeaconIds 
         : (run.validatedBeaconIds ? [] : run.beaconIds);
@@ -288,22 +280,18 @@ export const useOrientation = () => {
 
       pointsToAdd = basePoints;
 
-      // PÉNALITÉS pour le mode SCORE
       if (run.mode === 'score') {
          const durationSec = (endTime - run.startTime) / 1000;
          const overtimeSec = durationSec - run.durationLimit;
          
          if (overtimeSec > 0) {
-            // Pénalité : 5 points par minute entamée (exemple standard)
             const penaltyMinutes = Math.ceil(overtimeSec / 60);
             const penalty = penaltyMinutes * 5; 
-            pointsToAdd = Math.max(0, pointsToAdd - penalty); // Pas de points négatifs totaux ? Ou si ?
-            console.log(`Pénalité de temps: -${penalty} pts (${Math.round(overtimeSec)}s dépassement)`);
+            pointsToAdd = Math.max(0, pointsToAdd - penalty);
          }
       }
     }
 
-    // Mise à jour du groupe
     const groupIndex = state.groups.findIndex(g => g.id === run.groupId);
     const updatedGroups = [...state.groups];
     if (groupIndex !== -1) {
@@ -313,7 +301,6 @@ export const useOrientation = () => {
       };
     }
 
-    // Mise à jour de la course
     const updatedRuns = [...state.runs];
     updatedRuns[runIndex] = { 
         ...run, 

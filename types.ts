@@ -1,4 +1,3 @@
-
 export type Level = 'N1' | 'N2' | 'N3';
 
 export type RunStatus = 'idle' | 'running' | 'checking' | 'completed' | 'failed';
@@ -40,7 +39,7 @@ export interface ActiveRun {
 
 export interface GameState {
   beacons: Beacon[];
-  classes: ClassRoom[]; // Ajout des classes
+  classes: ClassRoom[];
   groups: StudentGroup[];
   runs: ActiveRun[];
 }

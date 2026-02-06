@@ -1,5 +1,5 @@
 import React, { useState, useEffect } from 'react';
-import { useOrientation, getTimeLimit, SyncStatus } from './useOrientation';
+import { useOrientation, getTimeLimit } from './useOrientation';
 import { ActiveRun, Beacon, RunMode, StudentGroup } from './types';
 import { 
   Users, 
@@ -9,7 +9,6 @@ import {
   Settings, 
   CheckCircle2, 
   XCircle, 
-  AlertTriangle,
   School,
   Plus,
   Trash2,
@@ -19,7 +18,6 @@ import {
   ArrowRight,
   Pencil,
   Save,
-  Stamp,
   MapPin,
   TableProperties,
   BarChart3,
@@ -50,17 +48,6 @@ const Badge = ({ children, className }: { children?: React.ReactNode, className?
   </span>
 );
 
-const LevelBadge = ({ level }: { level: string }) => {
-  const colors = {
-    N1: 'bg-n1/20 text-n1 border-n1/50 border',
-    N2: 'bg-n2/20 text-n2 border-n2/50 border',
-    N3: 'bg-n3/20 text-n3 border-n3/50 border',
-  };
-  return <Badge className={colors[level as keyof typeof colors] || 'bg-slate-100'}>{level}</Badge>;
-};
-
-// --- PUNCH GRID COMPONENT ---
-
 const PunchGrid = ({ 
   pattern, 
   onChange, 
@@ -72,7 +59,6 @@ const PunchGrid = ({
   readonly?: boolean;
   size?: 'sm' | 'md' | 'lg';
 }) => {
-  // Ensure pattern is 25 chars
   const safePattern = (pattern && pattern.length === 25) ? pattern : "0".repeat(25);
   const cells = safePattern.split('');
 
@@ -119,7 +105,6 @@ const CsvImporter = ({
   const [headers, setHeaders] = useState<string[]>([]);
   const [step, setStep] = useState<'upload' | 'mapping'>('upload');
   
-  // Form State
   const [className, setClassName] = useState(targetClassName || '');
   const [colFirstName, setColFirstName] = useState<string>('');
   const [colLastName, setColLastName] = useState<string>('');
@@ -140,26 +125,23 @@ const CsvImporter = ({
         const text = event.target?.result as string;
         if (!text) return;
         
-        // Basic CSV parsing (handles simple comma or semicolon separation)
         const lines = text.split(/\r?\n/).filter(line => line.trim() !== '');
         if (lines.length > 0) {
-          // Detect separator (comma or semicolon) based on first line
           const separator = lines[0].includes(';') ? ';' : ',';
           const parsedRows = lines.map(line => line.split(separator).map(cell => cell.trim().replace(/^"|"$/g, '')));
           
           setHeaders(parsedRows[0]);
           setRawRows(parsedRows.slice(1));
           
-          // Auto-detect columns if possible
           const headerLower = parsedRows[0].map(h => h.toLowerCase());
           const fnIndex = headerLower.findIndex(h => h.includes('prenom') || h.includes('first'));
           const lnIndex = headerLower.findIndex(h => h.includes('nom') || h.includes('last'));
           
           if (fnIndex !== -1) setColFirstName(parsedRows[0][fnIndex]);
-          else if (parsedRows[0].length > 0) setColFirstName(parsedRows[0][0]); // Default to 1st col
+          else if (parsedRows[0].length > 0) setColFirstName(parsedRows[0][0]);
 
           if (lnIndex !== -1) setColLastName(parsedRows[0][lnIndex]);
-          else if (parsedRows[0].length > 1) setColLastName(parsedRows[0][1]); // Default to 2nd col
+          else if (parsedRows[0].length > 1) setColLastName(parsedRows[0][1]);
           
           setStep('mapping');
         }
@@ -185,7 +167,7 @@ const CsvImporter = ({
       const fn = fnIndex !== -1 ? row[fnIndex] : '';
       const ln = lnIndex !== -1 ? row[lnIndex] : '';
       return `${fn} ${ln}`.trim();
-    }).filter(s => s !== ''); // Remove empty
+    }).filter(s => s !== ''); 
 
     onImport(className, students);
   };
@@ -289,11 +271,6 @@ const CsvImporter = ({
                   {name || <span className="text-slate-400 italic">(Vide)</span>}
                </div>
              ))}
-             {rawRows.length > 3 && (
-               <div className="text-xs text-center text-slate-400 italic mt-2">
-                 ... et {rawRows.length - 3} autres élèves
-               </div>
-             )}
           </div>
           <button 
             onClick={handleFinalImport}
@@ -310,7 +287,6 @@ const CsvImporter = ({
 
 // --- SUB-VIEWS ---
 
-// Type Helper
 type OrientationActions = ReturnType<typeof useOrientation>['actions'];
 type OrientationState = ReturnType<typeof useOrientation>['state'];
 
@@ -324,14 +300,10 @@ interface RunCardProps {
 const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
   const group = groups.find(g => g.id === run.groupId);
   
-  // Déterminer les balises à afficher
-  // Pour Star: Seulement les balises cible
-  // Pour Score: Toutes les balises du système (pour validation)
   const beaconsToShow = run.mode === 'star' 
       ? beacons.filter(b => run.beaconIds.includes(b.id))
-      : beacons; // On affiche toutes les balises en mode score pour la vérif
+      : beacons; 
   
-  // Calcul temps
   const now = run.endTime || Date.now();
   const elapsedSeconds = Math.floor((now - run.startTime) / 1000);
   const remainingSeconds = run.durationLimit - elapsedSeconds;
@@ -344,7 +316,6 @@ const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
     return `${secs < 0 ? '-' : ''}${m}:${s.toString().padStart(2, '0')}`;
   };
 
-  // Calcul score prévisionnel (pour mode score)
   const currentValidatedPoints = beaconsToShow
       .filter(b => run.validatedBeaconIds?.includes(b.id))
       .reduce((sum, b) => sum + b.points, 0);
@@ -367,7 +338,6 @@ const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
              {run.mode === 'score' && <Badge className="bg-purple-100 text-purple-700 border border-purple-200">Score</Badge>}
           </div>
           
-          {/* Si c'est checking ou score, on affiche les instructions de validation */}
           {(run.mode === 'score' || isChecking) && (
                <div className="mt-1 flex gap-2 text-xs">
                   <span className="text-slate-500">Points: <strong className="text-green-600">{currentValidatedPoints}</strong></span>
@@ -376,9 +346,6 @@ const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
                </div>
           )}
           
-          {/* Grid des balises */}
-          {/* En mode Score en cours (running), on cache les balises pour ne pas polluer, ou on les affiche ? 
-              Généralement on valide à la fin. On va les cacher si running && score. */}
           {(run.mode !== 'score' || isChecking) && (
             <div className="flex gap-1 mt-2 flex-wrap max-h-32 overflow-y-auto pr-1">
               {beaconsToShow.map(b => {
@@ -411,7 +378,6 @@ const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
           )}
         </div>
         
-        {/* Timer Display */}
         <div className="text-right">
            <div className={clsx(
               "text-2xl font-mono font-bold",
@@ -425,7 +391,6 @@ const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
       
       <div className="flex gap-2 mt-2">
           {run.mode === 'score' && !isChecking ? (
-              // Mode Score en cours : Bouton Arrivée uniquement
               <button 
                 onClick={() => actions.stopRunTimer(run.id)}
                 className="w-full bg-slate-800 hover:bg-slate-900 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
@@ -433,13 +398,12 @@ const RunCard: React.FC<RunCardProps> = ({ run, groups, beacons, actions }) => {
                   <StopCircle size={18} /> Arrivée (Stop Chrono)
               </button>
           ) : (
-              // Mode Etoile ou Mode Score en Checking : Validation finale
               <>
                 <button 
                   onClick={() => actions.completeRun(run.id, true)}
                   className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
                 >
-                  <CheckCircle2 size={18} /> {run.mode === 'score' ? 'Valider le score' : 'Terminer'}
+                  <CheckCircle2 size={18} /> {run.mode === 'score' ? 'Valider' : 'Terminer'}
                 </button>
                 <button 
                   onClick={() => actions.completeRun(run.id, false)}
@@ -463,14 +427,9 @@ const RaceControl = ({
 }) => {
   const [raceMode, setRaceMode] = useState<RunMode>('star');
   const [selectedGroup, setSelectedGroup] = useState<string>('');
-  
-  // Star Mode State
   const [selectedBeacons, setSelectedBeacons] = useState<string[]>([]);
-  
-  // Score Mode State
-  const [scoreDuration, setScoreDuration] = useState<number>(20); // minutes
+  const [scoreDuration, setScoreDuration] = useState<number>(20);
 
-  // UseEffect pour forcer le rafraîchissement du timer UI chaque seconde
   const [, setTimeUpdate] = useState(0);
 
   useEffect(() => {
@@ -505,14 +464,12 @@ const RaceControl = ({
 
   return (
     <div className="space-y-6">
-      {/* New Run Creator */}
       <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
         <div className="flex items-center justify-between mb-6">
             <h2 className="text-xl font-bold flex items-center gap-2 text-slate-800">
             <Flag className="text-blue-600" /> Nouveau Départ
             </h2>
             
-            {/* Mode Selector Toggle */}
             <div className="flex bg-slate-100 p-1 rounded-lg border border-slate-200">
                 <button
                     onClick={() => setRaceMode('star')}
@@ -541,7 +498,7 @@ const RaceControl = ({
             <select 
               value={selectedGroup}
               onChange={(e) => setSelectedGroup(e.target.value)}
-              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 focus:border-blue-500 outline-none bg-slate-50"
+              className="w-full p-3 rounded-lg border border-slate-300 focus:ring-2 focus:ring-blue-500 outline-none bg-slate-50"
             >
               <option value="">Sélectionner un groupe...</option>
               {availableGroups.length > 0 ? (
@@ -597,9 +554,6 @@ const RaceControl = ({
                             {scoreDuration} min
                         </div>
                     </div>
-                    <p className="text-xs text-slate-400 mt-2">
-                        Le groupe doit trouver un maximum de balises en {scoreDuration} minutes. Pénalité de 5pts/min de retard.
-                    </p>
                  </>
              )}
           </div>
@@ -619,7 +573,6 @@ const RaceControl = ({
         </div>
       </div>
 
-      {/* Active Runs Grid */}
       <div>
         <h2 className="text-lg font-semibold text-slate-700 mb-4 flex items-center gap-2">
           <div className="w-2 h-2 rounded-full bg-green-500 animate-pulse" />
@@ -641,7 +594,126 @@ const RaceControl = ({
   );
 };
 
-// --- STUDENT STATS DETAIL COMPONENT ---
+interface BeaconStat {
+  code: string;
+  level: string;
+  attempts: number;
+  success: number;
+  totalTime: number; 
+  countForTime: number; 
+}
+
+const calculateStudentStats = (
+  studentName: string, 
+  state: ReturnType<typeof useOrientation>['state']
+) => {
+    const studentGroupIds = state.groups
+      .filter(g => g.members.includes(studentName))
+      .map(g => g.id);
+
+    const studentRuns = state.runs.filter(r => 
+      studentGroupIds.includes(r.groupId) && (r.status === 'completed' || r.status === 'failed')
+    );
+
+    let totalPoints = 0;
+    let totalTime = 0;
+    const stats = {
+      N1: { attempts: 0, found: 0 },
+      N2: { attempts: 0, found: 0 },
+      N3: { attempts: 0, found: 0 },
+    };
+    
+    const beaconStats: Record<string, BeaconStat> = {};
+
+    studentRuns.forEach(run => {
+      const isSuccess = run.status === 'completed';
+      
+      const relevantBeaconIds = (run.mode === 'score') 
+        ? (run.validatedBeaconIds || []) 
+        : run.beaconIds;
+
+      const runBeacons = state.beacons.filter(b => relevantBeaconIds.includes(b.id));
+
+      let timePerBeacon = 0;
+      if (run.startTime && run.endTime) {
+        const duration = (run.endTime - run.startTime) / 1000;
+        totalTime += duration;
+        if (runBeacons.length > 0) {
+           timePerBeacon = duration / runBeacons.length;
+        }
+      }
+
+      if (run.mode === 'score' && isSuccess) {
+          runBeacons.forEach(b => {
+             if (!beaconStats[b.id]) {
+                beaconStats[b.id] = { code: b.code, level: b.level, attempts: 0, success: 0, totalTime: 0, countForTime: 0 };
+             }
+             beaconStats[b.id].attempts += 1;
+             beaconStats[b.id].success += 1;
+             beaconStats[b.id].totalTime += timePerBeacon;
+             beaconStats[b.id].countForTime += 1;
+             
+             if (b.level) {
+                 stats[b.level as keyof typeof stats].attempts += 1;
+                 stats[b.level as keyof typeof stats].found += 1;
+             }
+             totalPoints += b.points;
+          });
+          
+          const durationSec = ((run.endTime || 0) - run.startTime) / 1000;
+          const overtimeSec = durationSec - run.durationLimit;
+          if (overtimeSec > 0) {
+              const penalty = Math.ceil(overtimeSec / 60) * 5;
+              totalPoints = Math.max(0, totalPoints - penalty);
+          }
+      } else {
+        runBeacons.forEach(b => {
+            if (!beaconStats[b.id]) {
+            beaconStats[b.id] = { 
+                code: b.code, 
+                level: b.level, 
+                attempts: 0, 
+                success: 0, 
+                totalTime: 0, 
+                countForTime: 0 
+            };
+            }
+
+            beaconStats[b.id].attempts += 1;
+            if (b.level) {
+                stats[b.level as keyof typeof stats].attempts += 1;
+                
+                let wasFound = false;
+                if (run.validatedBeaconIds) {
+                    wasFound = run.validatedBeaconIds.includes(b.id);
+                } else {
+                    wasFound = isSuccess;
+                }
+
+                if (wasFound) {
+                    stats[b.level as keyof typeof stats].found += 1;
+                    totalPoints += b.points;
+                    
+                    beaconStats[b.id].success += 1;
+                    beaconStats[b.id].totalTime += timePerBeacon;
+                    beaconStats[b.id].countForTime += 1;
+                }
+            }
+        });
+      }
+    });
+
+    const totalFound = stats.N1.found + stats.N2.found + stats.N3.found;
+    const avgTimePerBeacon = totalFound > 0 ? Math.round(totalTime / totalFound) : 0;
+
+    return {
+      totalPoints,
+      avgTimePerBeacon,
+      stats,
+      beaconStats,
+      totalRuns: studentRuns.length
+    };
+};
 
 const StudentDetailRow = ({ 
   stats, 
@@ -690,147 +762,6 @@ const StudentDetailRow = ({
        )}
     </div>
   );
-};
-
-// Helper function definition moved outside component to avoid recreation but needs state access, 
-// so kept inside Dashboard or passed as prop. Here defined inside for closure access.
-interface BeaconStat {
-  code: string;
-  level: string;
-  attempts: number;
-  success: number;
-  totalTime: number; // accumulated average time
-  countForTime: number; // number of runs contributing to totalTime
-}
-
-const calculateStudentStats = (
-  studentName: string, 
-  state: ReturnType<typeof useOrientation>['state']
-) => {
-    // 1. Find all group IDs the student belongs to
-    const studentGroupIds = state.groups
-      .filter(g => g.members.includes(studentName))
-      .map(g => g.id);
-
-    // 2. Find all runs for these groups
-    const studentRuns = state.runs.filter(r => 
-      studentGroupIds.includes(r.groupId) && (r.status === 'completed' || r.status === 'failed')
-    );
-
-    let totalPoints = 0;
-    let totalTime = 0;
-    const stats = {
-      N1: { attempts: 0, found: 0 },
-      N2: { attempts: 0, found: 0 },
-      N3: { attempts: 0, found: 0 },
-    };
-    
-    // Detailed stats per beacon
-    const beaconStats: Record<string, BeaconStat> = {};
-
-    studentRuns.forEach(run => {
-      const isSuccess = run.status === 'completed';
-      
-      // Determine relevant beacons based on mode
-      // Star: Target beacons
-      // Score: Found beacons (validatedBeaconIds)
-      const relevantBeaconIds = (run.mode === 'score') 
-        ? (run.validatedBeaconIds || []) 
-        : run.beaconIds;
-
-      const runBeacons = state.beacons.filter(b => relevantBeaconIds.includes(b.id));
-
-      let timePerBeacon = 0;
-      if (run.startTime && run.endTime) {
-        const duration = (run.endTime - run.startTime) / 1000;
-        totalTime += duration;
-        // Estimate time per beacon simply by dividing run duration by beacon count
-        if (runBeacons.length > 0) {
-           timePerBeacon = duration / runBeacons.length;
-        }
-      }
-
-      // Add points directly for score runs (handling penalties is tricky per beacon, we sum raw points here)
-      if (run.mode === 'score' && isSuccess) {
-          // For stats display, we iterate through beacons found
-          runBeacons.forEach(b => {
-             // Init
-             if (!beaconStats[b.id]) {
-                beaconStats[b.id] = { code: b.code, level: b.level, attempts: 0, success: 0, totalTime: 0, countForTime: 0 };
-             }
-             beaconStats[b.id].attempts += 1;
-             beaconStats[b.id].success += 1;
-             beaconStats[b.id].totalTime += timePerBeacon;
-             beaconStats[b.id].countForTime += 1;
-             
-             if (b.level) {
-                 stats[b.level].attempts += 1;
-                 stats[b.level].found += 1;
-             }
-             totalPoints += b.points;
-          });
-          
-          // Deduct penalty from totalPoints if needed? 
-          // It's hard to attribute penalty to specific beacons. 
-          // So StudentStats might show raw beacon points, while Group Ranking shows net score.
-          // Let's adjust totalPoints with penalty for consistency with ranking.
-          const durationSec = ((run.endTime || 0) - run.startTime) / 1000;
-          const overtimeSec = durationSec - run.durationLimit;
-          if (overtimeSec > 0) {
-              const penalty = Math.ceil(overtimeSec / 60) * 5;
-              totalPoints = Math.max(0, totalPoints - penalty);
-          }
-      } else {
-        // Star Mode Logic (existing)
-        runBeacons.forEach(b => {
-            // Init stats for this beacon if needed
-            if (!beaconStats[b.id]) {
-            beaconStats[b.id] = { 
-                code: b.code, 
-                level: b.level, 
-                attempts: 0, 
-                success: 0, 
-                totalTime: 0, 
-                countForTime: 0 
-            };
-            }
-
-            // Update stats
-            beaconStats[b.id].attempts += 1;
-            if (b.level) {
-                stats[b.level].attempts += 1;
-                
-                let wasFound = false;
-                if (run.validatedBeaconIds) {
-                    wasFound = run.validatedBeaconIds.includes(b.id);
-                } else {
-                    wasFound = isSuccess;
-                }
-
-                if (wasFound) {
-                    stats[b.level].found += 1;
-                    totalPoints += b.points;
-                    
-                    // Update detailed beacon stats
-                    beaconStats[b.id].success += 1;
-                    beaconStats[b.id].totalTime += timePerBeacon;
-                    beaconStats[b.id].countForTime += 1;
-                }
-            }
-        });
-      }
-    });
-
-    const totalFound = stats.N1.found + stats.N2.found + stats.N3.found;
-    const avgTimePerBeacon = totalFound > 0 ? Math.round(totalTime / totalFound) : 0;
-
-    return {
-      totalPoints,
-      avgTimePerBeacon,
-      stats,
-      beaconStats,
-      totalRuns: studentRuns.length
-    };
 };
 
 const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'] }) => {
@@ -919,24 +850,11 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                     : 0}%
                 </div>
               </div>
-              <div className="p-4 bg-purple-50 rounded-xl col-span-2">
-                <div className="text-purple-600 text-sm font-bold uppercase tracking-wide">Mode de fonctionnement</div>
-                <div className="text-sm font-medium text-slate-600 mt-1">
-                    L'application calcule les temps et les points localement et tente de synchroniser avec le serveur si disponible.
-                </div>
-              </div>
             </div>
           </div>
         </div>
       ) : (
         <div className="bg-white rounded-2xl shadow-sm border border-slate-200 overflow-hidden">
-           <div className="p-6 border-b border-slate-200 bg-slate-50">
-             <h2 className="text-xl font-bold flex items-center gap-2"><BarChart3 className="text-blue-600" /> Analyse Individuelle</h2>
-             <p className="text-sm text-slate-500 mt-1">
-               Statistiques agrégées pour chaque élève, basées sur toutes les courses effectuées (individuellement ou en groupe).
-             </p>
-           </div>
-           
            <div className="overflow-x-auto">
              <table className="w-full text-sm text-left">
                <thead className="text-xs text-slate-500 uppercase bg-slate-100">
@@ -944,10 +862,9 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                    <th className="px-6 py-3">Élève / Classe</th>
                    <th className="px-6 py-3 text-center">Courses</th>
                    <th className="px-6 py-3 text-center">Points Totaux</th>
-                   <th className="px-6 py-3 text-center text-green-700">N1 (Réussis/Total)</th>
-                   <th className="px-6 py-3 text-center text-yellow-700">N2 (Réussis/Total)</th>
-                   <th className="px-6 py-3 text-center text-red-700">N3 (Réussis/Total)</th>
-                   <th className="px-6 py-3 text-center">Temps Moyen / Balise</th>
+                   <th className="px-6 py-3 text-center text-green-700">N1</th>
+                   <th className="px-6 py-3 text-center text-yellow-700">N2</th>
+                   <th className="px-6 py-3 text-center text-red-700">N3</th>
                    <th className="px-6 py-3 text-center">Détail</th>
                  </tr>
                </thead>
@@ -966,10 +883,10 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                                 <div className="text-xs text-slate-500">{cls.name}</div>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="font-bold">{stats.totalRuns}</span>}
+                                <span className="font-bold">{stats.totalRuns}</span>
                               </td>
                               <td className="px-6 py-4 text-center">
-                                {stats.totalRuns === 0 ? <span className="text-slate-300">-</span> : <span className="text-blue-600 font-bold">{stats.totalPoints} pts</span>}
+                                <span className="text-blue-600 font-bold">{stats.totalPoints} pts</span>
                               </td>
                               <td className="px-6 py-4 text-center">
                                 {stats.stats.N1.attempts > 0 ? (
@@ -992,11 +909,6 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                                     </span>
                                 ) : <span className="text-slate-300">-</span>}
                               </td>
-                              <td className="px-6 py-4 text-center font-mono">
-                                {stats.avgTimePerBeacon > 0 ? (
-                                  <span>{Math.floor(stats.avgTimePerBeacon / 60)}m {Math.floor(stats.avgTimePerBeacon % 60).toString().padStart(2, '0')}s</span>
-                                ) : <span className="text-slate-300">-</span>}
-                              </td>
                               <td className="px-6 py-4 text-center">
                                 <button 
                                   onClick={() => toggleStudent(student)}
@@ -1008,7 +920,7 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                             </tr>
                             {isExpanded && (
                               <tr>
-                                <td colSpan={8} className="p-0">
+                                <td colSpan={7} className="p-0">
                                    <StudentDetailRow stats={stats} studentName={student} />
                                 </td>
                               </tr>
@@ -1018,13 +930,6 @@ const Dashboard = ({ state }: { state: ReturnType<typeof useOrientation>['state'
                       })
                     ) : null
                  ))}
-                 {state.classes.length === 0 && (
-                   <tr>
-                     <td colSpan={8} className="text-center py-8 text-slate-400 italic">
-                        Ajoutez des classes et des élèves pour voir les statistiques.
-                     </td>
-                   </tr>
-                 )}
                </tbody>
              </table>
            </div>
@@ -1043,30 +948,22 @@ const AdminPanel = ({
 }) => {
   const [adminTab, setAdminTab] = useState<'classes' | 'beacons'>('classes');
   
-  // CSV Import State
   const [showCsvImport, setShowCsvImport] = useState(false);
-
-  // State pour les formulaires classes
   const [newClass, setNewClass] = useState('');
   const [selectedClassId, setSelectedClassId] = useState<string | null>(null);
   const [studentsInput, setStudentsInput] = useState('');
   
-  // State pour la création de groupe
   const [selectedStudentsForGroup, setSelectedStudentsForGroup] = useState<string[]>([]);
   const [newGroupName, setNewGroupName] = useState('');
-
-  // State pour les groupes automatiques (Counters)
   const [groupAssignments, setGroupAssignments] = useState<Record<string, number>>({});
   const [autoGroupSize, setAutoGroupSize] = useState(2);
 
-  // State pour les balises
   const [beaconCode, setBeaconCode] = useState('');
   const [beaconLevel, setBeaconLevel] = useState('N1');
   const [beaconPunch, setBeaconPunch] = useState('0000000000000000000000000');
   const [beaconDistance, setBeaconDistance] = useState('');
   const [editingBeaconId, setEditingBeaconId] = useState<string | null>(null);
 
-  // -- CLASSES HANDLERS --
   const handleAddClass = (e: React.FormEvent) => {
     e.preventDefault();
     if(newClass.trim()) {
@@ -1079,7 +976,6 @@ const AdminPanel = ({
     if (selectedClassId) {
       actions.addStudentsToClass(selectedClassId, students);
     } else {
-      // Fallback si jamais on arrivait ici sans classe sélectionnée (ne devrait plus arriver)
       actions.addClassWithStudents(importedClassName, students);
     }
     setShowCsvImport(false);
@@ -1109,8 +1005,6 @@ const AdminPanel = ({
     }
   };
 
-  // -- AUTO GROUP HANDLERS --
-
   const handleAutoAssign = () => {
     if (!selectedClass) return;
     const newAssignments: Record<string, number> = {};
@@ -1128,14 +1022,9 @@ const AdminPanel = ({
     setGroupAssignments(newAssignments);
   };
 
-  const handleResetAssignments = () => {
-    setGroupAssignments({});
-  };
-
   const handleBulkCreateGroups = () => {
     if (Object.keys(groupAssignments).length === 0) return;
 
-    // Regrouper par numéro de groupe
     const groupsToCreate: Record<number, string[]> = {};
     (Object.entries(groupAssignments) as [string, number][]).forEach(([student, groupNum]) => {
        if (groupNum > 0) {
@@ -1144,12 +1033,10 @@ const AdminPanel = ({
        }
     });
 
-    // Créer les groupes
     Object.entries(groupsToCreate).forEach(([groupNum, members]) => {
       actions.addGroup(`Groupe ${groupNum}`, members);
     });
 
-    // Reset
     setGroupAssignments({});
     alert(`${Object.keys(groupsToCreate).length} groupes ont été créés !`);
   };
@@ -1159,14 +1046,12 @@ const AdminPanel = ({
     if (!isNaN(num)) {
        setGroupAssignments(prev => ({...prev, [student]: num}));
     } else {
-       // Allow clearing
        const newAss = {...groupAssignments};
        delete newAss[student];
        setGroupAssignments(newAss);
     }
   };
 
-  // -- BEACONS HANDLERS --
   const handleBeaconSubmit = (e: React.FormEvent) => {
     e.preventDefault();
     if(beaconCode && beaconPunch) {
@@ -1180,7 +1065,6 @@ const AdminPanel = ({
         actions.addBeacon(beaconCode, beaconLevel as any, points, beaconPunch, distance);
       }
       
-      // Reset form
       setBeaconCode('');
       setBeaconLevel('N1');
       setBeaconPunch('0000000000000000000000000');
@@ -1231,7 +1115,6 @@ const AdminPanel = ({
 
       {adminTab === 'classes' && (
         <div className="grid md:grid-cols-12 gap-6">
-          {/* COLONNE GAUCHE: Liste des Classes */}
           <div className="md:col-span-4 space-y-4">
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
               <h3 className="font-bold mb-3 flex items-center gap-2"><School size={18} /> Mes Classes</h3>
@@ -1256,7 +1139,7 @@ const AdminPanel = ({
                       setSelectedClassId(c.id);
                       setSelectedStudentsForGroup([]);
                       setGroupAssignments({});
-                      setShowCsvImport(false); // Close importer if selecting a class
+                      setShowCsvImport(false);
                     }}
                     className={clsx(
                       "w-full text-left p-3 rounded-lg border transition-all flex justify-between items-center",
@@ -1271,13 +1154,9 @@ const AdminPanel = ({
                     </span>
                   </button>
                 ))}
-                {state.classes.length === 0 && (
-                  <p className="text-sm text-slate-400 text-center py-4">Ajoutez une classe pour commencer</p>
-                )}
               </div>
             </div>
 
-            {/* Liste des Groupes Actuels */}
             <div className="bg-white p-4 rounded-xl shadow-sm border border-slate-200">
               <h3 className="font-bold mb-3 flex items-center gap-2"><Users size={18} /> Groupes formés</h3>
               <div className="space-y-2 max-h-60 overflow-y-auto">
@@ -1295,12 +1174,10 @@ const AdminPanel = ({
                      </button>
                    </div>
                 ))}
-                {state.groups.length === 0 && <p className="text-xs text-slate-400">Aucun groupe formé.</p>}
               </div>
             </div>
           </div>
 
-          {/* COLONNE DROITE: Gestion de la classe sélectionnée ou Import */}
           <div className="md:col-span-8">
             {showCsvImport ? (
               <CsvImporter 
@@ -1310,7 +1187,6 @@ const AdminPanel = ({
               />
             ) : selectedClass ? (
               <div className="space-y-6">
-                {/* Ajout d'élèves */}
                 <div className="bg-white p-6 rounded-2xl shadow-sm border border-slate-200">
                   <div className="flex justify-between items-center mb-4">
                     <h3 className="font-bold text-lg text-slate-800">Gestion de la {selectedClass.name}</h3>
@@ -1318,14 +1194,12 @@ const AdminPanel = ({
                        <button 
                           onClick={() => setShowCsvImport(true)}
                           className="flex items-center gap-2 bg-slate-100 text-slate-700 hover:bg-slate-200 px-3 py-1.5 rounded-lg text-sm font-medium transition-colors border border-slate-200"
-                          title="Importer liste CSV"
                         >
                           <FileSpreadsheet size={16} className="text-green-600" /> Importer CSV
                         </button>
                         <button 
                           onClick={() => actions.removeClass(selectedClass.id)}
                           className="text-red-500 hover:bg-red-50 p-2 rounded-lg transition-colors border border-transparent hover:border-red-100"
-                          title="Supprimer la classe"
                         >
                           <Trash2 size={18} />
                         </button>
@@ -1333,7 +1207,7 @@ const AdminPanel = ({
                   </div>
                   
                   <div className="mb-4">
-                    <label className="block text-sm font-medium mb-1 text-slate-600">Ajouter des élèves (copier/coller liste)</label>
+                    <label className="block text-sm font-medium mb-1 text-slate-600">Ajouter des élèves</label>
                     <div className="flex gap-2">
                       <textarea 
                         className="flex-1 p-2 border rounded-lg text-sm h-20" 
@@ -1350,9 +1224,7 @@ const AdminPanel = ({
                     </div>
                   </div>
 
-                  {/* Liste des élèves & Création de groupe */}
                   <div className="border-t pt-4 mt-4">
-                     {/* Toolbar Auto-Group */}
                      <div className="bg-blue-50 border border-blue-100 p-3 rounded-lg mb-4 flex flex-wrap items-center gap-3">
                         <div className="flex items-center gap-2">
                            <Wand2 size={16} className="text-blue-600" />
@@ -1381,13 +1253,12 @@ const AdminPanel = ({
                               disabled={Object.keys(groupAssignments).length === 0}
                               className="bg-green-600 disabled:opacity-50 text-white text-xs px-3 py-1.5 rounded font-bold hover:bg-green-700 flex items-center gap-1"
                            >
-                             <Layers size={14} /> Valider et créer {(Object.values(groupAssignments) as number[]).reduce((max, curr) => Math.max(max, curr), 0)} groupes
+                             <Layers size={14} /> Créer {Object.keys(groupAssignments).length > 0 ? (Object.values(groupAssignments) as number[]).reduce((max, curr) => Math.max(max, curr), 0) : 0} groupes
                            </button>
                            {Object.keys(groupAssignments).length > 0 && (
                              <button 
-                               onClick={handleResetAssignments}
+                               onClick={() => setGroupAssignments({})}
                                className="text-slate-400 hover:text-red-500"
-                               title="Effacer les compteurs"
                              >
                                <Eraser size={16} />
                              </button>
@@ -1397,9 +1268,8 @@ const AdminPanel = ({
 
                      <div className="flex justify-between items-end mb-3">
                         <h4 className="font-medium text-slate-700">Liste des élèves ({selectedClass.students.length})</h4>
-                        {/* OLD MANUAL GROUP CREATION - KEPT AS REQUESTED */}
                         {selectedStudentsForGroup.length > 0 && (
-                          <div className="flex items-center gap-2 bg-yellow-50 p-2 rounded-lg border border-yellow-100 animate-in fade-in slide-in-from-bottom-2">
+                          <div className="flex items-center gap-2 bg-yellow-50 p-2 rounded-lg border border-yellow-100">
                             <input 
                               placeholder="Nom du groupe manuel" 
                               className="text-sm p-1.5 rounded border border-yellow-200 outline-none w-48"
@@ -1411,47 +1281,40 @@ const AdminPanel = ({
                               disabled={!newGroupName}
                               className="text-xs bg-yellow-600 text-white px-3 py-1.5 rounded font-bold hover:bg-yellow-700 disabled:opacity-50"
                             >
-                              Créer ({selectedStudentsForGroup.length})
+                              Créer
                             </button>
                           </div>
                         )}
                      </div>
 
-                     {selectedClass.students.length === 0 ? (
-                       <p className="text-sm text-slate-400 italic">Aucun élève dans cette classe.</p>
-                     ) : (
-                       <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
-                         {selectedClass.students.map((student, idx) => (
-                           <div 
-                             key={idx}
-                             onClick={() => toggleStudentSelection(student)}
+                     <div className="grid grid-cols-2 sm:grid-cols-3 md:grid-cols-4 gap-2">
+                       {selectedClass.students.map((student, idx) => (
+                         <div 
+                           key={idx}
+                           onClick={() => toggleStudentSelection(student)}
+                           className={clsx(
+                             "relative text-sm p-2 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between gap-2 group",
+                             selectedStudentsForGroup.includes(student)
+                              ? "bg-yellow-100 border-yellow-400 text-yellow-900"
+                              : "bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300"
+                           )}
+                         >
+                           <span className="truncate">{student}</span>
+                           <input 
+                             type="number" 
+                             min="1"
                              className={clsx(
-                               "relative text-sm p-2 rounded-lg border text-left transition-all cursor-pointer flex items-center justify-between gap-2 group",
-                               selectedStudentsForGroup.includes(student)
-                                ? "bg-yellow-100 border-yellow-400 text-yellow-900"
-                                : "bg-slate-50 text-slate-700 border-slate-200 hover:border-blue-300"
+                               "w-10 h-6 text-center text-xs border rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none",
+                               groupAssignments[student] ? "border-blue-500 font-bold text-blue-600" : "border-slate-200 text-slate-400"
                              )}
-                           >
-                             <span className="truncate">{student}</span>
-                             <input 
-                               type="number" 
-                               min="1"
-                               className={clsx(
-                                 "w-10 h-6 text-center text-xs border rounded bg-white focus:ring-2 focus:ring-blue-500 outline-none",
-                                 groupAssignments[student] ? "border-blue-500 font-bold text-blue-600" : "border-slate-200 text-slate-400"
-                               )}
-                               placeholder="#"
-                               value={groupAssignments[student] || ''}
-                               onClick={(e) => e.stopPropagation()} // Prevent selection toggle when clicking input
-                               onChange={(e) => updateStudentGroup(student, e.target.value)}
-                             />
-                           </div>
-                         ))}
-                       </div>
-                     )}
-                     <p className="text-xs text-slate-400 mt-2 text-right">
-                       Utilisez les compteurs pour les groupes rapides, ou cliquez sur les noms pour la création manuelle.
-                     </p>
+                             placeholder="#"
+                             value={groupAssignments[student] || ''}
+                             onClick={(e) => e.stopPropagation()} 
+                             onChange={(e) => updateStudentGroup(student, e.target.value)}
+                           />
+                         </div>
+                       ))}
+                     </div>
                   </div>
                 </div>
               </div>
@@ -1500,7 +1363,7 @@ const AdminPanel = ({
               </div>
 
                <div>
-                 <label className="block text-sm font-medium mb-1 text-slate-600">Distance du départ (mètres) <span className="text-slate-400 font-normal">(Optionnel)</span></label>
+                 <label className="block text-sm font-medium mb-1 text-slate-600">Distance (m)</label>
                  <div className="relative">
                    <div className="absolute inset-y-0 left-0 pl-3 flex items-center pointer-events-none">
                      <MapPin size={16} className="text-slate-400" />
@@ -1516,7 +1379,7 @@ const AdminPanel = ({
                </div>
               
               <div>
-                 <label className="block text-sm font-medium mb-1 text-slate-600">Code Poinçon (5x5)</label>
+                 <label className="block text-sm font-medium mb-1 text-slate-600">Poinçon</label>
                  <div className="p-4 bg-slate-50 rounded-xl border border-slate-200 flex justify-center">
                     <PunchGrid 
                       pattern={beaconPunch} 
@@ -1524,7 +1387,6 @@ const AdminPanel = ({
                       size="lg" 
                     />
                  </div>
-                 <p className="text-xs text-slate-400 mt-2 text-center">Cliquez sur les points pour dessiner le motif du poinçon.</p>
               </div>
 
               <div className="flex gap-2 pt-2">
@@ -1586,21 +1448,18 @@ const AdminPanel = ({
                     <button 
                       onClick={() => handleEditBeacon(b)}
                       className="p-2 text-slate-400 hover:text-blue-600 hover:bg-blue-50 rounded-lg transition-colors"
-                      title="Modifier"
                     >
                       <Pencil size={16} />
                     </button>
                     <button 
                       onClick={() => actions.removeBeacon(b.id)}
                       className="p-2 text-slate-400 hover:text-red-600 hover:bg-red-50 rounded-lg transition-colors"
-                      title="Supprimer"
                     >
                       <Trash2 size={16} />
                     </button>
                   </div>
                 </div>
               ))}
-              {state.beacons.length === 0 && <p className="text-slate-400 italic text-center py-8">Aucune balise configurée.</p>}
             </div>
           </div>
         </div>
@@ -1612,7 +1471,7 @@ const AdminPanel = ({
 // --- MAIN APP ---
 
 function App() {
-  const { state, actions, loading, isOfflineMode, syncStatus } = useOrientation();
+  const { state, actions, loading, syncStatus } = useOrientation();
   const [activeTab, setActiveTab] = useState<'race' | 'stats' | 'admin'>('race');
 
   if (loading) {
@@ -1623,7 +1482,6 @@ function App() {
     );
   }
 
-  // Helper pour l'affichage du statut
   const getStatusIndicator = () => {
     switch(syncStatus) {
       case 'connecting':
@@ -1644,7 +1502,6 @@ function App() {
             <Cloud size={14} /> Connecté
           </div>
         );
-      case 'offline':
       default:
         return (
           <div className="flex items-center gap-1.5 text-xs font-medium text-amber-600 bg-amber-50 px-2 py-1 rounded-full border border-amber-200">
@@ -1656,7 +1513,6 @@ function App() {
 
   return (
     <div className="min-h-screen bg-slate-50 font-sans text-slate-900">
-      {/* Header */}
       <header className="bg-white border-b border-slate-200 sticky top-0 z-10">
         <div className="max-w-5xl mx-auto px-4 h-16 flex items-center justify-between">
           <div className="flex items-center gap-2">
@@ -1672,14 +1528,12 @@ function App() {
         </div>
       </header>
 
-      {/* Main Content */}
       <main className="max-w-5xl mx-auto px-4 py-6 mb-20">
         {activeTab === 'race' && <RaceControl state={state} actions={actions} />}
         {activeTab === 'stats' && <Dashboard state={state} />}
         {activeTab === 'admin' && <AdminPanel state={state} actions={actions} />}
       </main>
 
-      {/* Bottom Navigation */}
       <nav className="fixed bottom-0 left-0 right-0 bg-white border-t border-slate-200 px-4 pb-6 shadow-lg z-20">
         <div className="max-w-md mx-auto flex justify-around">
           <button 
