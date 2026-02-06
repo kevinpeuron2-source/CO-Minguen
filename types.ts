@@ -1,3 +1,4 @@
+
 export type Level = 'N1' | 'N2' | 'N3';
 
 export type RunStatus = 'idle' | 'running' | 'completed' | 'failed';
@@ -28,6 +29,7 @@ export interface ActiveRun {
   id: string;
   groupId: string;
   beaconIds: string[]; // IDs of beacons being searched for
+  validatedBeaconIds?: string[]; // IDs des balises effectivement validées par le prof
   startTime: number; // Timestamp in ms
   durationLimit: number; // In seconds
   status: RunStatus;

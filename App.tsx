@@ -32,7 +32,8 @@ import {
   Cloud,
   CloudOff,
   CloudUpload,
-  Loader2
+  Loader2,
+  Check
 } from 'lucide-react';
 import { clsx } from 'clsx';
 import { twMerge } from 'tailwind-merge';
@@ -364,11 +365,30 @@ const RaceControl = ({
         <div className="flex justify-between items-start mb-3">
           <div>
             <h3 className="font-bold text-lg text-slate-800">{group?.name}</h3>
-            <div className="flex gap-1 mt-1">
-              {beacons.map(b => (
-                <LevelBadge key={b.id} level={b.level} />
-              ))}
+            <div className="flex gap-1 mt-1 flex-wrap">
+              {beacons.map(b => {
+                const isValidated = run.validatedBeaconIds?.includes(b.id);
+                return (
+                  <button
+                    key={b.id}
+                    onClick={() => actions.toggleBeaconStatus(run.id, b.id)}
+                    className={clsx(
+                      "flex items-center gap-1 px-1.5 py-0.5 rounded border transition-all hover:scale-105 active:scale-95",
+                      isValidated 
+                        ? "bg-green-100 border-green-300 text-green-700 shadow-sm" 
+                        : "bg-slate-50 border-slate-200 text-slate-400 opacity-80"
+                    )}
+                  >
+                    <span className="font-bold text-xs">{b.code}</span>
+                    <span className={clsx("text-[10px]", isValidated ? "opacity-100" : "opacity-50")}>
+                      ({b.level})
+                    </span>
+                    {isValidated && <Check size={10} strokeWidth={4} />}
+                  </button>
+                );
+              })}
             </div>
+            <p className="text-[10px] text-slate-400 mt-1 italic">Cliquez sur une balise pour la valider</p>
           </div>
           <div className={clsx(
             "text-2xl font-mono font-bold",
@@ -383,13 +403,13 @@ const RaceControl = ({
             onClick={() => actions.completeRun(run.id, true)}
             className="flex-1 bg-green-500 hover:bg-green-600 text-white py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
           >
-            <CheckCircle2 size={18} /> Trouvé
+            <CheckCircle2 size={18} /> Terminer
           </button>
           <button 
             onClick={() => actions.completeRun(run.id, false)}
             className="flex-1 bg-red-100 hover:bg-red-200 text-red-700 py-2 rounded-lg font-medium flex items-center justify-center gap-2 transition-colors"
           >
-            <XCircle size={18} /> Échec
+            <XCircle size={18} /> Abandon
           </button>
         </div>
       </div>
@@ -606,7 +626,21 @@ const calculateStudentStats = (
         beaconStats[b.id].attempts += 1;
         if (b.level) {
             stats[b.level].attempts += 1;
-            if (isSuccess) {
+            // CHECKING IF BEACON WAS ACTUALLY VALIDATED
+            // Prioritize validatedBeaconIds if it exists (granular validation)
+            // If it doesn't exist (old data) or empty but run successful, assume all (if isSuccess is true)
+            // NOTE: Logic here must match completeRun logic somewhat.
+            
+            // If runs has validatedBeaconIds defined:
+            let wasFound = false;
+            if (run.validatedBeaconIds) {
+                wasFound = run.validatedBeaconIds.includes(b.id);
+            } else {
+                // Legacy: if success, assume found.
+                wasFound = isSuccess;
+            }
+
+            if (wasFound) {
                 stats[b.level].found += 1;
                 totalPoints += b.points;
                 

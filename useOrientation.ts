@@ -200,6 +200,7 @@ export const useOrientation = () => {
       id: generateId(),
       groupId,
       beaconIds,
+      validatedBeaconIds: [], // Initialise vide
       startTime: Date.now(),
       durationLimit: duration,
       status: 'running'
@@ -214,6 +215,26 @@ export const useOrientation = () => {
     syncState(newState);
   };
 
+  // Nouvelle action pour basculer l'état validé d'une balise
+  const toggleBeaconStatus = (runId: string, beaconId: string) => {
+    const runIndex = state.runs.findIndex(r => r.id === runId);
+    if (runIndex === -1) return;
+
+    const run = state.runs[runIndex];
+    let newValidatedIds = run.validatedBeaconIds ? [...run.validatedBeaconIds] : [];
+
+    if (newValidatedIds.includes(beaconId)) {
+      newValidatedIds = newValidatedIds.filter(id => id !== beaconId);
+    } else {
+      newValidatedIds.push(beaconId);
+    }
+
+    const updatedRuns = [...state.runs];
+    updatedRuns[runIndex] = { ...run, validatedBeaconIds: newValidatedIds };
+
+    syncState({ ...state, runs: updatedRuns });
+  };
+
   const completeRun = (runId: string, success: boolean) => {
     const runIndex = state.runs.findIndex(r => r.id === runId);
     if (runIndex === -1) return;
@@ -224,7 +245,17 @@ export const useOrientation = () => {
     // Calcul des points
     let pointsToAdd = 0;
     if (success) {
-      const runBeacons = state.beacons.filter(b => run.beaconIds.includes(b.id));
+      // Si validatedBeaconIds existe, on utilise ça, sinon on prend tout (rétrocompatibilité ou validation globale)
+      const idsToCount = (run.validatedBeaconIds && run.validatedBeaconIds.length > 0) 
+        ? run.validatedBeaconIds 
+        : (run.validatedBeaconIds ? [] : run.beaconIds); // Si vide mais défini -> 0 pts. Si indéfini -> tout.
+
+      // Cependant, pour le bouton "Trouvé", si l'utilisateur n'a rien coché (car c'est nouveau),
+      // il vaut peut-être mieux assumer que tout est bon si validatedBeaconIds est indéfini.
+      // Si validatedBeaconIds est un tableau vide, c'est que l'utilisateur a vu l'interface mais n'a rien coché => 0pts.
+      // S'il est undefined (vieux runs), on prend tout.
+      
+      const runBeacons = state.beacons.filter(b => idsToCount.includes(b.id));
       pointsToAdd = runBeacons.reduce((acc, b) => acc + b.points, 0);
     }
 
@@ -285,6 +316,7 @@ export const useOrientation = () => {
       addGroup,
       removeGroup,
       startRun,
+      toggleBeaconStatus,
       completeRun,
       addBeacon,
       updateBeacon,
